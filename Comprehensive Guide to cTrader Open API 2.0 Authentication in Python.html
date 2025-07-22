@@ -1,0 +1,1402 @@
+<!DOCTYPE html><html lang="en"><head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>cTrader Open API 2.0 Authentication Guide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            overflow-x: hidden;
+        }
+        .font-serif { font-family: 'Playfair Display', serif; }
+        .font-sans { font-family: 'Inter', sans-serif; }
+        
+        /* Custom colors with better contrast */
+        .bg-navy { background-color: #1e293b; }
+        .text-navy { color: #1e293b; }
+        .border-navy { border-color: #1e293b; }
+        .bg-teal { background-color: #0d9488; }
+        .text-teal { color: #0d9488; }
+        .border-teal { border-color: #0d9488; }
+        
+        /* TOC styling */
+        .toc-fixed {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 280px;
+            background: #f8fafc;
+            border-right: 2px solid #e2e8f0;
+            z-index: 50;
+            overflow-y: auto;
+            padding: 2rem 1.5rem;
+        }
+        
+        .main-content {
+            margin-left: 280px;
+            min-height: 100vh;
+        }
+        
+        .toc-link {
+            display: block;
+            padding: 0.5rem 0;
+            color: #64748b;
+            text-decoration: none;
+            border-left: 2px solid transparent;
+            padding-left: 1rem;
+            margin-left: -1rem;
+            transition: all 0.2s ease;
+        }
+        
+        .toc-link:hover {
+            color: #0d9488;
+            border-left-color: #0d9488;
+        }
+        
+        .toc-link.active {
+            color: #0d9488;
+            border-left-color: #0d9488;
+            font-weight: 600;
+        }
+        
+        /* Hero section styling */
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+            align-items: center;
+            min-height: 60vh;
+        }
+        
+        .hero-text {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            color: white;
+            padding: 3rem;
+            border-radius: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero-text::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(13, 148, 136, 0.1) 0%, transparent 70%);
+            animation: pulse 4s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+        
+        .hero-visual {
+            background: linear-gradient(45deg, #f1f5f9, #e2e8f0);
+            border-radius: 1rem;
+            padding: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            min-height: 300px;
+        }
+        
+        /* Code blocks */
+        .code-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+        
+        .code-block .keyword { color: #f472b6; }
+        .code-block .string { color: #34d399; }
+        .code-block .comment { color: #94a3b8; }
+        .code-block .number { color: #fbbf24; }
+        
+        /* Citation links */
+        .citation {
+            color: #0d9488;
+            text-decoration: none;
+            font-weight: 500;
+            border-bottom: 1px dotted #0d9488;
+        }
+        
+        .citation:hover {
+            background-color: #f0fdfa;
+            border-bottom-style: solid;
+        }
+        
+        /* Mermaid diagram styling */
+        .mermaid-container {
+            display: flex;
+            justify-content: center;
+            min-height: 300px;
+            max-height: 800px;
+            background: #ffffff;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 30px;
+            margin: 30px 0;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mermaid-container .mermaid {
+            width: 100%;
+            max-width: 100%;
+            height: 100%;
+            cursor: grab;
+            transition: transform 0.3s ease;
+            transform-origin: center center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            touch-action: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        .mermaid-container .mermaid svg {
+            max-width: 100%;
+            height: 100%;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .mermaid-container .mermaid:active {
+            cursor: grabbing;
+        }
+
+        .mermaid-container.zoomed .mermaid {
+            height: 100%;
+            width: 100%;
+            cursor: grab;
+        }
+
+        .mermaid-controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 10px;
+            z-index: 20;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .mermaid-control-btn {
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #374151;
+            font-size: 14px;
+            min-width: 36px;
+            height: 36px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mermaid-control-btn:hover {
+            background: #f8fafc;
+            border-color: #3b82f6;
+            color: #3b82f6;
+            transform: translateY(-1px);
+        }
+
+        .mermaid-control-btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* Responsive images */
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        /* Section styling */
+        .section-content {
+            padding: 4rem 3rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .section-header {
+            border-bottom: 3px solid #0d9488;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        /* Alert boxes */
+        .alert {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 0 0.5rem 0.5rem 0;
+        }
+        
+        .alert-warning {
+            background: #fef3c7;
+            border-left-color: #f59e0b;
+        }
+        
+        .alert-success {
+            background: #d1fae5;
+            border-left-color: #10b981;
+        }
+        
+        .alert-danger {
+            background: #fee2e2;
+            border-left-color: #ef4444;
+        }
+        
+        /* Responsive design */
+        @media (max-width: 1024px) {
+            .toc-fixed {
+                display: none;
+            }
+            .main-content {
+                margin-left: 0;
+            }
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+            .section-content {
+                padding: 2rem 1.5rem;
+            }
+            .mermaid-control-btn:not(.reset-zoom) {
+                display: none;
+            }
+            .mermaid-controls {
+                top: auto;
+                bottom: 15px;
+                right: 15px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+            .hero-text {
+                padding: 1.5rem;
+            }
+            .hero-visual {
+                min-height: 200px;
+            }
+            .hero-text h1 {
+                font-size: 2rem;
+                line-height: 1.2;
+            }
+            .hero-text p {
+                font-size: 1rem;
+            }
+            .section-content {
+                padding: 1.5rem 1rem;
+            }
+        }
+    </style>
+  </head>
+
+  <body class="bg-gray-50 font-sans">
+    <!-- Fixed Table of Contents -->
+    <nav class="toc-fixed">
+      <div class="mb-8">
+        <h3 class="font-serif font-bold text-lg text-navy mb-4">Contents</h3>
+        <div class="space-y-1">
+          <a href="#understanding" class="toc-link">Understanding the Issue</a>
+          <a href="#symptoms" class="toc-link text-sm ml-4">Common Symptoms</a>
+          <a href="#conundrum" class="toc-link text-sm ml-4">Version Response Conundrum</a>
+          <a href="#culprit" class="toc-link text-sm ml-4">Potential Culprit</a>
+
+          <a href="#correct-flow" class="toc-link">Correct Authentication Flow</a>
+          <a href="#secure-connection" class="toc-link text-sm ml-4">Secure Connection</a>
+          <a href="#initial-handshake" class="toc-link text-sm ml-4">Initial Handshake</a>
+          <a href="#app-auth" class="toc-link text-sm ml-4">Application Auth</a>
+          <a href="#account-auth" class="toc-link text-sm ml-4">Account Auth</a>
+          <a href="#maintaining" class="toc-link text-sm ml-4">Maintaining Connection</a>
+
+          <a href="#message-formats" class="toc-link">Message Formats</a>
+          <a href="#app-auth-req" class="toc-link text-sm ml-4">Application Auth Req</a>
+          <a href="#account-auth-req" class="toc-link text-sm ml-4">Account Auth Req</a>
+          <a href="#heartbeat" class="toc-link text-sm ml-4">Heartbeat Event</a>
+          <a href="#version-res" class="toc-link text-sm ml-4">Version Response</a>
+
+          <a href="#implementation" class="toc-link">Implementation</a>
+          <a href="#recommended" class="toc-link text-sm ml-4">Recommended Approach</a>
+          <a href="#sample-code" class="toc-link text-sm ml-4">Sample Code</a>
+          <a href="#error-handling" class="toc-link text-sm ml-4">Error Handling</a>
+
+          <a href="#troubleshooting" class="toc-link">Troubleshooting</a>
+          <a href="#best-practices" class="toc-link">Best Practices</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Hero Section -->
+      <section class="bg-white">
+        <div class="section-content">
+          <div class="hero-grid">
+            <div class="hero-text">
+              <h1 class="font-serif font-black text-4xl md:text-5xl leading-tight mb-6 relative z-10">
+                <em class="text-teal">Mastering</em> cTrader Open API 2.0 Authentication
+              </h1>
+              <p class="text-xl text-gray-200 mb-8 leading-relaxed relative z-10">
+                A comprehensive guide to resolving server disconnection issues and implementing robust authentication flows in Python
+              </p>
+              <div class="flex items-center space-x-6 text-sm text-gray-300 relative z-10">
+                <span><i class="fas fa-shield-alt mr-2"></i>Security First</span>
+                <span><i class="fas fa-code mr-2"></i>Production Ready</span>
+                <span><i class="fas fa-rocket mr-2"></i>Optimized Performance</span>
+              </div>
+            </div>
+            <div class="hero-visual">
+              <img src="https://kimi-web-img.moonshot.cn/img/miro.medium.com/49e6d4e21890d79be1081c6fbe0d2d163d6fcf8a.png" alt="Abstract API security authentication" class="w-full h-full object-cover rounded-lg opacity-80" size="medium" aspect="wide" query="API security authentication" referrerpolicy="no-referrer" data-modified="1" data-score="11599.00"/>
+            </div>
+          </div>
+
+          <!-- Key Highlights -->
+          <div class="grid md:grid-cols-3 gap-6 mt-12">
+            <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+              <div class="text-teal text-2xl mb-3">
+                <i class="fas fa-heartbeat"></i>
+              </div>
+              <h3 class="font-semibold text-navy mb-2">Critical Heartbeat</h3>
+              <p class="text-gray-600 text-sm">Initial ProtoHeartbeatEvent with specific data <code class="bg-gray-100 px-2 py-1 rounded">08 33 12 00</code> must be sent first</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+              <div class="text-teal text-2xl mb-3">
+                <i class="fas fa-shield-alt"></i>
+              </div>
+              <h3 class="font-semibold text-navy mb-2">SSL/TLS Required</h3>
+              <p class="text-gray-600 text-sm">All connections must use SSL/TLS encryption for successful API interaction</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+              <div class="text-teal text-2xl mb-3">
+                <i class="fas fa-clock"></i>
+              </div>
+              <h3 class="font-semibold text-navy mb-2">10-Second Rule</h3>
+              <p class="text-gray-600 text-sm">Send heartbeats every 10 seconds to maintain connection and prevent disconnections</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Understanding the Issue -->
+      <section id="understanding" class="bg-white">
+        <div class="section-content">
+          <div class="section-header">
+            <h2 class="font-serif font-bold text-3xl text-navy">Understanding the Authentication Disconnection Issue</h2>
+          </div>
+
+          <p class="text-lg text-gray-700 leading-relaxed mb-8">
+            The cTrader Open API 2.0 provides a powerful interface for developers to build custom trading applications and integrate with the cTrader platform. However, a common challenge faced by developers, particularly those using Python, is unexpected disconnections during the initial authentication flow.
+          </p>
+
+          <div class="alert alert-warning">
+            <div class="flex items-start">
+              <i class="fas fa-exclamation-triangle text-amber-600 mt-1 mr-3"></i>
+              <div>
+                <strong>Critical Issue:</strong> The server disconnection issue during cTrader Open API authentication in Python, often characterized by receiving unexpected
+                <code>ProtoOAVersionRes</code> or empty messages after
+                <code>ProtoOAApplicationAuthReq</code>, is frequently linked to the
+                <code>ctrader-open-api</code> library (v0.9.3) and a misunderstanding of the initial handshake.
+              </div>
+            </div>
+          </div>
+
+          <h3 id="symptoms" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Common Symptoms: Disconnection after ProtoOAApplicationAuthReq</h3>
+
+          <p class="text-gray-700 mb-6">
+            A frequently reported symptom involves the server disconnecting the client shortly after the
+            <code>ProtoOAApplicationAuthReq</code> message is sent <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>,
+            <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[153]</a>. Users utilizing the
+            <code>ctrader-open-api</code> Python library (version 0.9.3) to connect to the demo endpoint experience the following sequence:
+          </p>
+
+          <div class="bg-gray-50 p-6 rounded-lg mb-8">
+            <ol class="list-decimal list-inside space-y-3 text-gray-700">
+              <li>A TCP connection is successfully established</li>
+              <li>The <code>ProtoOAApplicationAuthReq</code> (payloadType 2101) with valid <code>clientId</code> and <code>clientSecret</code> is transmitted</li>
+              <li>Instead of receiving the expected <code>ProtoOAApplicationAuthRes</code> (payloadType 2102), the server responds with multiple <code>ProtoOAVersionRes</code> (payloadType 51) messages</li>
+              <li>Following these version responses, the connection is abruptly lost with an error message: &#34;Connection to the other side was lost in a non-clean fashion: Connection lost&#34;</li>
+            </ol>
+          </div>
+
+          <h3 id="conundrum" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">The ProtoOAVersionRes / ProtoHeartbeatEvent Conundrum</h3>
+
+          <p class="text-gray-700 mb-6">
+            A particularly puzzling aspect is the server&#39;s response with messages identified as <code>ProtoOAVersionRes</code> (payloadType 51) immediately after <code>ProtoOAApplicationAuthReq</code>
+            <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>,
+            <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[153]</a>. The official documentation indicates that <code>ProtoOAVersionRes</code> (payloadType 2105) is a response to <code>ProtoOAVersionReq</code> (payloadType 2104).
+          </p>
+
+          <div class="alert alert-success">
+            <div class="flex items-start">
+              <i class="fas fa-lightbulb text-green-600 mt-1 mr-3"></i>
+              <div>
+                <strong>Key Insight:</strong> Community observations and official SDK behavior suggest that payloadType 51 in this context might actually be a <code>ProtoHeartbeatEvent</code> or related heartbeat message, not <code>ProtoOAVersionRes</code>
+                <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>,
+                <a href="https://github.com/spotware" class="citation" target="_blank">[8]</a>.
+              </div>
+            </div>
+          </div>
+
+          <h3 id="culprit" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Potential Culprit: Python ctrader-open-api Library (v0.9.3)</h3>
+
+          <p class="text-gray-700 mb-6">
+            The <code>ctrader-open-api</code> Python library, specifically version 0.9.3, has been repeatedly mentioned in conjunction with authentication disconnections
+            <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>,
+            <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[153]</a>. Users experiencing this problem were using this version along with <code>protobuf==3.20.1</code> and <code>Twisted==24.3.0</code>.
+          </p>
+
+          <div class="grid md:grid-cols-2 gap-6">
+            <div class="bg-red-50 border border-red-200 p-6 rounded-lg">
+              <h4 class="font-semibold text-red-800 mb-3">Library Issues</h4>
+              <ul class="text-red-700 space-y-2 text-sm">
+                <li>• Incorrect initial handshake implementation</li>
+                <li>• Missing initial ProtoHeartbeatEvent</li>
+                <li>• Protobuf deserialization problems</li>
+                <li>• No ProtoOAApplicationAuthRes received</li>
+              </ul>
+            </div>
+            <div class="bg-green-50 border border-green-200 p-6 rounded-lg">
+              <h4 class="font-semibold text-green-800 mb-3">Recommended Solution</h4>
+              <ul class="text-green-700 space-y-2 text-sm">
+                <li>• Use official OpenApiPy SDK
+                  <a href="https://help.ctrader.com/open-api/" class="citation" target="_blank">[41]</a>,
+                  <a href="https://help.ctrader.com/open-api/" class="citation" target="_blank">[66]</a>
+                </li>
+                <li>• Implement proper heartbeat sequence</li>
+                <li>• Verify SSL/TLS configuration</li>
+                <li>• Monitor connection state</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Correct Authentication Flow -->
+      <section id="correct-flow" class="bg-gray-50">
+        <div class="section-content">
+          <div class="section-header">
+            <h2 class="font-serif font-bold text-3xl text-navy">The Correct Authentication Flow</h2>
+          </div>
+
+          <p class="text-lg text-gray-700 leading-relaxed mb-8">
+            Establishing a successful and stable connection with the cTrader Open API 2.0 requires adherence to a specific sequence of steps and message exchanges. Deviations from this protocol can lead to disconnections.
+          </p>
+
+          <div class="mermaid-container">
+            <div class="mermaid-controls">
+              <button class="mermaid-control-btn zoom-in" title="放大">
+                <i class="fas fa-search-plus"></i>
+              </button>
+              <button class="mermaid-control-btn zoom-out" title="缩小">
+                <i class="fas fa-search-minus"></i>
+              </button>
+              <button class="mermaid-control-btn reset-zoom" title="重置">
+                <i class="fas fa-expand-arrows-alt"></i>
+              </button>
+              <button class="mermaid-control-btn fullscreen" title="全屏查看">
+                <i class="fas fa-expand"></i>
+              </button>
+            </div>
+            <div class="mermaid">
+              flowchart TD
+              A[&#34;TCP Connection&#34;] --&gt; B[&#34;SSL/TLS Handshake&#34;]
+              B --&gt; C[&#34;Send ProtoHeartbeatEvent
+              <br/>payloadType: 51
+              <br/>data: 08 33 12 00&#34;]
+              C --&gt; D[&#34;Send ProtoOAApplicationAuthReq
+              <br/>payloadType: 2101&#34;]
+              D --&gt; E{&#34;Receive Response&#34;}
+              E --&gt;|&#34;ProtoOAApplicationAuthRes&#34;| F[&#34;Application Authenticated&#34;]
+              E --&gt;|&#34;ProtoOAErrorRes&#34;| G[&#34;Authentication Failed&#34;]
+              F --&gt; H[&#34;Send ProtoOAAccountAuthReq
+              <br/>payloadType: 2103&#34;]
+              H --&gt; I{&#34;Receive Response&#34;}
+              I --&gt;|&#34;ProtoOAAccountAuthRes&#34;| J[&#34;Account Authenticated&#34;]
+              I --&gt;|&#34;ProtoOAErrorRes&#34;| K[&#34;Account Auth Failed&#34;]
+              J --&gt; L[&#34;Periodic Heartbeats
+              <br/>Every 10 seconds&#34;]
+            </div>
+          </div>
+
+          <h3 id="secure-connection" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Establishing a Secure Connection (SSL/TLS)</h3>
+
+          <p class="text-gray-700 mb-6">
+            The first step in interacting with the cTrader Open API is to <strong>establish a secure connection to the cTrader Open API proxy server</strong>. The official documentation explicitly states that TCP client connections <em>must</em> use SSL; otherwise, interaction with the API will not be possible <a href="https://help.ctrader.com/open-api/connection/" class="citation" target="_blank">[36]</a>.
+          </p>
+
+          <div class="bg-blue-50 border border-blue-200 p-6 rounded-lg mb-8">
+            <h4 class="font-semibold text-blue-800 mb-3">SSL/TLS Requirements</h4>
+            <ul class="text-blue-700 space-y-2">
+              <li>• Immediately after establishing raw TCP connection, initiate SSL/TLS handshake</li>
+              <li>• Python SDK should handle this automatically when initialized with host and port</li>
+              <li>• SSL handshake must complete successfully before sending Protobuf messages</li>
+              <li>• Endpoints: <code>demo.ctraderapi.com:5035</code> (demo) or <code>live.ctraderapi.com:5035</code> (live)</li>
+            </ul>
+          </div>
+
+          <h3 id="initial-handshake" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">The Initial Handshake: Sending ProtoHeartbeatEvent</h3>
+
+          <div class="alert alert-success">
+            <div class="flex items-start">
+              <i class="fas fa-star text-green-600 mt-1 mr-3"></i>
+              <div>
+                <strong>The Most Critical Missing Step:</strong> Often the failure to send an initial <code>ProtoHeartbeatEvent</code> (payloadType 51) with specific data <code>08 33 12 00</code> <em>before</em> sending <code>ProtoOAApplicationAuthReq</code>
+                <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>.
+              </div>
+            </div>
+          </div>
+
+          <p class="text-gray-700 mb-6">
+            A critical, yet often overlooked, step in the cTrader Open API authentication flow is the <strong>initial handshake, which involves the client sending a
+              <code>ProtoHeartbeatEvent</code> message to the server <em>before</em> initiating the formal application authentication request</strong>
+            <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>.
+          </p>
+
+          <div class="code-block mb-8">
+            <pre><code><span class="comment"># Critical initialization sequence</span>
+<span class="comment"># 1. Establish TCP connection</span>
+<span class="comment"># 2. Complete SSL/TLS handshake</span>
+<span class="comment"># 3. Send initial ProtoHeartbeatEvent FIRST</span>
+<span class="comment">#    - payloadType: 51</span>
+<span class="comment">#    - data: 08 33 12 00 (hex)</span>
+<span class="comment"># 4. THEN send ProtoOAApplicationAuthReq</span></code></pre>
+          </div>
+
+          <h3 id="app-auth" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Application Authentication: ProtoOAApplicationAuthReq and ProtoOAApplicationAuthRes</h3>
+
+          <p class="text-gray-700 mb-6">
+            Following the crucial initial handshake, the next step is application-level authentication. This is initiated by sending a <strong>
+              <code>ProtoOAApplicationAuthReq</code> message (payloadType 2101)</strong> containing <strong>
+              <code>clientId</code> and <code>clientSecret</code> credentials</strong>
+            <a href="https://www.kancloud.cn/zhao0876/ctraderapi/1069114" class="citation" target="_blank">[173]</a>.
+          </p>
+
+          <div class="bg-yellow-50 border border-yellow-200 p-6 rounded-lg mb-8">
+            <h4 class="font-semibold text-yellow-800 mb-3">Important Note</h4>
+            <p class="text-yellow-700">
+              Any messages sent to the server <em>before</em> the application is successfully authenticated (i.e., before receiving <code>ProtoOAApplicationAuthRes</code>) will result in an error <a href="https://help.ctrader.com/open-api/connection/" class="citation" target="_blank">[186]</a>.
+            </p>
+          </div>
+
+          <h3 id="account-auth" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Account Authentication: ProtoOAAccountAuthReq and ProtoOAAccountAuthRes</h3>
+
+          <p class="text-gray-700 mb-6">
+            Once application-level authentication is successful, the next stage is authenticating a specific trading account session using <strong>
+              <code>ProtoOAAccountAuthReq</code> message (payloadType 2103)</strong>
+            <a href="https://www.kancloud.cn/zhao0876/ctraderapi/1069114" class="citation" target="_blank">[173]</a>. This requires:
+          </p>
+
+          <div class="grid md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white border border-gray-200 p-6 rounded-lg">
+              <h4 class="font-semibold text-navy mb-3">ctidTraderAccountId</h4>
+              <p class="text-gray-600 text-sm">Unique identifier of the trader&#39;s account in the cTrader platform</p>
+            </div>
+            <div class="bg-white border border-gray-200 p-6 rounded-lg">
+              <h4 class="font-semibold text-navy mb-3">accessToken</h4>
+              <p class="text-gray-600 text-sm">OAuth 2.0 token obtained through user authorization
+                <a href="https://community.ctrader.com/forum/connect-api-support/22829/" class="citation" target="_blank">[169]</a>,
+                <a href="https://community.ctrader.com/forum/connect-api-support/45875/" class="citation" target="_blank">[178]</a>
+              </p>
+            </div>
+          </div>
+
+          <h3 id="maintaining" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Maintaining Connection: The Role of ProtoHeartbeatEvent</h3>
+
+          <p class="text-gray-700 mb-6">
+            To maintain an active connection and prevent disconnection due to inactivity, clients must send <strong>
+              <code>ProtoHeartbeatEvent</code> messages periodically</strong>. The cTrader Open API FAQ states: &#34;Applications are disconnected by the server after some time of inactivity. To avoid getting disconnected from the server, make sure that you send a heartbeat to the server at least once every 10 seconds&#34; <a href="https://help.ctrader.com/open-api/faq/" class="citation" target="_blank">[51]</a>,
+            <a href="https://help.ctrader.com/open-api/faq/" class="citation" target="_blank">[179]</a>.
+          </p>
+
+          <div class="bg-teal-50 border border-teal-200 p-6 rounded-lg">
+            <h4 class="font-semibold text-teal-800 mb-3">Heartbeat Requirements</h4>
+            <ul class="text-teal-700 space-y-2">
+              <li>• <strong>Initial Heartbeat:</strong> Send immediately after connection (payloadType 51, data: 08 33 12 00)</li>
+              <li>• <strong>Periodic Heartbeats:</strong> Send at least once every 10 seconds</li>
+              <li>• <strong>Payload Type:</strong> Always 51 for ProtoHeartbeatEvent
+                <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>,
+                <a href="https://pkg.go.dev/github.com/diegobernardes/ctrader/openapi" class="citation" target="_blank">[71]</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Message Formats -->
+      <section id="message-formats" class="bg-white">
+        <div class="section-content">
+          <div class="section-header">
+            <h2 class="font-serif font-bold text-3xl text-navy">Message Formats and Required Fields</h2>
+          </div>
+
+          <p class="text-lg text-gray-700 leading-relaxed mb-8">
+            The cTrader Open API 2.0 relies on Google Protocol Buffers for message serialization. Each message type has a specific structure and set of required fields that must be correctly populated for successful communication.
+          </p>
+
+          <h3 id="app-auth-req" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">ProtoOAApplicationAuthReq Structure</h3>
+
+          <div class="grid lg:grid-cols-3 gap-8 mb-8">
+            <div class="lg:col-span-2">
+              <p class="text-gray-700 mb-6">
+                The <code>ProtoOAApplicationAuthReq</code> message is the initial authentication request to authorize the application itself. This message must be successfully processed before any account-specific operations <a href="https://www.kancloud.cn/zhao0876/ctraderapi/1069114" class="citation" target="_blank">[173]</a>.
+              </p>
+
+              <div class="code-block">
+                <pre><code><span class="keyword">from</span> ctrader_open_api.messages.OpenApiMessages_pb2 <span class="keyword">import</span> ProtoOAApplicationAuthReq
+
+request = ProtoOAApplicationAuthReq()
+request.clientId = <span class="string">&#34;YOUR_APPLICATION_CLIENT_ID&#34;</span>
+request.clientSecret = <span class="string">&#34;YOUR_APPLICATION_CLIENT_SECRET&#34;</span>
+<span class="comment"># payloadType is usually set automatically by the library</span>
+<span class="comment"># request.payloadType = ProtoOAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ</span></code></pre>
+              </div>
+            </div>
+            <div class="bg-gray-50 p-6 rounded-lg">
+              <h4 class="font-semibold text-navy mb-4">Required Fields</h4>
+              <div class="space-y-4">
+                <div>
+                  <code class="bg-navy text-white px-2 py-1 rounded text-sm">payloadType</code>
+                  <p class="text-gray-600 text-sm mt-1">2101 (PROTO_OA_APPLICATION_AUTH_REQ)</p>
+                </div>
+                <div>
+                  <code class="bg-navy text-white px-2 py-1 rounded text-sm">clientId</code>
+                  <p class="text-gray-600 text-sm mt-1">Application Client ID from registration</p>
+                </div>
+                <div>
+                  <code class="bg-navy text-white px-2 py-1 rounded text-sm">clientSecret</code>
+                  <p class="text-gray-600 text-sm mt-1">Application Client Secret</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <h3 id="account-auth-req" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">ProtoOAAccountAuthReq Structure</h3>
+
+          <p class="text-gray-700 mb-6">
+            Following successful application authentication, the next step is authenticating a specific trading account using the <code>ProtoOAAccountAuthReq</code> message. This requires an already established and authorized connection at the application level <a href="https://www.kancloud.cn/zhao0876/ctraderapi/1069114" class="citation" target="_blank">[173]</a>.
+          </p>
+
+          <div class="code-block mb-8">
+            <pre><code><span class="keyword">from</span> ctrader_open_api.messages.OpenApiMessages_pb2 <span class="keyword">import</span> ProtoOAAccountAuthReq
+
+account_auth_request = ProtoOAAccountAuthReq()
+account_auth_request.ctidTraderAccountId = <span class="number">1234567890</span>  <span class="comment"># Replace with actual ctidTraderAccountId</span>
+account_auth_request.accessToken = <span class="string">&#34;YOUR_ACCESS_TOKEN_FOR_THE_ACCOUNT&#34;</span> <span class="comment"># Replace with actual Access Token</span>
+<span class="comment"># account_auth_request.payloadType = ProtoOAPayloadType.PROTO_OA_ACCOUNT_AUTH_REQ</span></code></pre>
+          </div>
+
+          <h3 id="heartbeat" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">ProtoHeartbeatEvent Structure</h3>
+
+          <div class="alert alert-success">
+            <div class="flex items-start">
+              <i class="fas fa-heart text-green-600 mt-1 mr-3"></i>
+              <div>
+                <strong>Critical for Connection:</strong> The <code>ProtoHeartbeatEvent</code> message (payloadType 51) plays a crucial role in maintaining the connection, both during initial handshake and throughout the session. Send at least once every 10 seconds <a href="https://help.ctrader.com/open-api/connection/" class="citation" target="_blank">[186]</a>.
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-purple-50 border border-purple-200 p-6 rounded-lg">
+            <h4 class="font-semibold text-purple-800 mb-3">Initial Heartbeat Requirements</h4>
+            <ul class="text-purple-700 space-y-2">
+              <li>• <strong>Timing:</strong> Send <em>before</em> ProtoOAApplicationAuthReq</li>
+              <li>• <strong>Payload:</strong> Specific data
+                <code>08 33 12 00</code> (observed in official SDK)
+              </li>
+              <li>• <strong>Purpose:</strong> Connection validation and readiness signal</li>
+              <li>• <strong>Consequence:</strong> If missing, server may disconnect or send unexpected empty messages <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[167]</a>
+              </li>
+            </ul>
+          </div>
+
+          <h3 id="version-res" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Understanding ProtoOAVersionRes</h3>
+
+          <p class="text-gray-700 mb-6">
+            The <code>ProtoOAVersionRes</code> message (payloadType 2105) is the server&#39;s response to a <code>ProtoOAVersionReq</code> (payloadType 2104) sent by the client <a href="https://www.kancloud.cn/zhao0876/ctraderapi/1069114" class="citation" target="_blank">[173]</a>. Its primary purpose is to check the current version of the Open API scheme.
+          </p>
+
+          <div class="bg-red-50 border border-red-200 p-6 rounded-lg">
+            <h4 class="font-semibold text-red-800 mb-3">Important Distinction</h4>
+            <p class="text-red-700 mb-2">
+              <strong>PayloadType 51:</strong> Used for both <code>ProtoHeartbeatEvent</code> and potentially <code>ProtoOAVersionRes</code>, causing confusion.
+            </p>
+            <p class="text-red-700">
+              When received unsolicited after <code>ProtoOAApplicationAuthReq</code>, these messages are likely <code>ProtoHeartbeatEvent</code> responses, not version responses <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[167]</a>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Implementation -->
+      <section id="implementation" class="bg-gray-50">
+        <div class="section-content">
+          <div class="section-header">
+            <h2 class="font-serif font-bold text-3xl text-navy">Implementing the Solution: Python Code Example</h2>
+          </div>
+
+          <p class="text-lg text-gray-700 leading-relaxed mb-8">
+            Successfully authenticating with the cTrader Open API 2.0 in Python requires careful attention to protocol details, especially the initial handshake. While a full implementation involves connection management, SSL/TLS setup, and asynchronous message handling, we provide conceptual guidance on the authentication message flow.
+          </p>
+
+          <h3 id="recommended" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Recommended Approach: Using the Official OpenApiPy SDK</h3>
+
+          <div class="alert alert-success">
+            <div class="flex items-start">
+              <i class="fas fa-check-circle text-green-600 mt-1 mr-3"></i>
+              <div>
+                <strong>Best Practice:</strong> The most reliable approach is to use the official <code>OpenApiPy</code> SDK provided by Spotware <a href="https://help.ctrader.com/open-api/" class="citation" target="_blank">[41]</a>,
+                <a href="https://help.ctrader.com/open-api/" class="citation" target="_blank">[66]</a>. This SDK is actively maintained and correctly implements the protocol, including implicit handshake requirements.
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-blue-50 border border-blue-200 p-6 rounded-lg mb-8">
+            <h4 class="font-semibold text-blue-800 mb-3">Why Use Official SDK?</h4>
+            <ul class="text-blue-700 space-y-2">
+              <li>• Handles low-level connection details automatically</li>
+              <li>• Implements correct SSL/TLS setup</li>
+              <li>• Manages message serialization/deserialization</li>
+              <li>• Follows proper authentication sequence</li>
+              <li>• Maintains heartbeat requirements</li>
+            </ul>
+          </div>
+
+          <h3 id="sample-code" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Sample Python Code Snippet for Authentication</h3>
+
+          <p class="text-gray-700 mb-6">
+            The following is a <strong>conceptual Python code snippet</strong> illustrating the message flow for authentication. This focuses on the sequence of messages rather than complete application structure.
+          </p>
+
+          <div class="code-block mb-8">
+            <pre><code><span class="comment"># Conceptual example - assumes a &#39;client&#39; object that can send/receive Protobuf messages</span>
+<span class="comment"># and handle connection, SSL, and asynchronous operations.</span>
+
+<span class="comment"># 1. Establish Secure Connection (SSL/TLS)</span>
+<span class="comment"># client.connect(host, port, use_ssl=True) # This is conceptual</span>
+
+<span class="comment"># 2. Initial Handshake: Send Initial ProtoHeartbeatEvent</span>
+<span class="comment"># This is critical and often missing in problematic implementations.</span>
+<span class="comment"># The data &#39;08 33 12 00&#39; for payloadType 51 is what the official SDK sends.</span>
+<span class="comment"># Construct and send this heartbeat BEFORE ProtoOAApplicationAuthReq.</span>
+<span class="comment"># initial_heartbeat = ProtoMessage() # Conceptual, use your library&#39;s message type</span>
+<span class="comment"># initial_heartbeat.payloadType = 51 # ProtoHeartbeatEvent</span>
+<span class="comment"># # The payload &#39;12 00&#39; might be specific to the initial heartbeat.</span>
+<span class="comment"># # For subsequent heartbeats, the structure might be different or empty.</span>
+<span class="comment"># initial_heartbeat.payload = bytes.fromhex(&#39;12 00&#39;) # Example payload</span>
+<span class="comment"># client.send_message(initial_heartbeat)</span>
+
+<span class="comment"># 3. Application Authentication</span>
+<span class="keyword">from</span> ctrader_open_api.messages.OpenApiMessages_pb2 <span class="keyword">import</span> ProtoOAApplicationAuthReq, ProtoOAAccountAuthReq
+
+app_auth_req = ProtoOAApplicationAuthReq()
+app_auth_req.clientId = <span class="string">&#34;YOUR_CLIENT_ID&#34;</span> <span class="comment"># Replace with your actual Client ID</span>
+app_auth_req.clientSecret = <span class="string">&#34;YOUR_CLIENT_SECRET&#34;</span> <span class="comment"># Replace with your actual Client Secret</span>
+<span class="comment"># app_auth_req.payloadType = 2101 # Usually set by the library</span>
+client.send_message(app_auth_req)
+
+<span class="comment"># Wait for and handle ProtoOAApplicationAuthRes (payloadType 2102)</span>
+<span class="comment"># response = client.receive_message()</span>
+<span class="comment"># if response.payloadType == 2102: # ProtoOAApplicationAuthRes</span>
+<span class="comment">#     print(&#34;Application authenticated successfully.&#34;)</span>
+<span class="comment"># elif response.payloadType == 1: # ProtoOAErrorRes</span>
+<span class="comment">#     print(f&#34;Application authentication failed: {response}&#34;)</span>
+<span class="comment">#     # Handle error</span>
+<span class="comment"># else:</span>
+<span class="comment">#     print(f&#34;Unexpected response: {response}&#34;)</span>
+<span class="comment">#     # Handle unexpected message</span>
+
+<span class="comment"># 4. Account Authentication (proceed only if application auth was successful)</span>
+<span class="comment"># ctid_trader_account_id = YOUR_ACCOUNT_ID # int64</span>
+<span class="comment"># access_token = &#34;YOUR_ACCOUNT_ACCESS_TOKEN&#34; # string</span>
+
+<span class="comment"># account_auth_req = ProtoOAAccountAuthReq()</span>
+<span class="comment"># account_auth_req.ctidTraderAccountId = ctid_trader_account_id</span>
+<span class="comment"># account_auth_req.accessToken = access_token</span>
+<span class="comment"># # account_auth_req.payloadType = 2103 # Usually set by the library</span>
+<span class="comment"># client.send_message(account_auth_req)</span>
+
+<span class="comment"># Wait for and handle ProtoOAAccountAuthRes (payloadType 2104)</span>
+<span class="comment"># response = client.receive_message()</span>
+<span class="comment"># if response.payloadType == 2104: # ProtoOAAccountAuthRes</span>
+<span class="comment">#     print(f&#34;Account {response.ctidTraderAccountId} authenticated successfully.&#34;)</span>
+<span class="comment"># elif response.payloadType == 1: # ProtoOAErrorRes</span>
+<span class="comment">#     print(f&#34;Account authentication failed: {response}&#34;)</span>
+<span class="comment">#     # Handle error</span>
+<span class="comment"># else:</span>
+<span class="comment">#     print(f&#34;Unexpected response: {response}&#34;)</span>
+<span class="comment">#     # Handle unexpected message</span>
+
+<span class="comment"># 5. Maintain Connection: Send ProtoHeartbeatEvent periodically</span>
+<span class="comment"># import time</span>
+<span class="comment"># while True:</span>
+<span class="comment">#     time.sleep(9) # Send slightly more frequently than every 10 seconds</span>
+<span class="comment">#     heartbeat = ProtoMessage() # Conceptual</span>
+<span class="comment">#     heartbeat.payloadType = 51 # ProtoHeartbeatEvent</span>
+<span class="comment">#     # Subsequent heartbeats might have a different or empty payload.</span>
+<span class="comment">#     # Refer to SDK or official examples for the exact structure.</span>
+<span class="comment">#     # heartbeat.payload = ... # May be empty or require specific fields</span>
+<span class="comment">#     client.send_message(heartbeat)</span></code></pre>
+          </div>
+
+          <div class="bg-yellow-50 border border-yellow-200 p-6 rounded-lg">
+            <h4 class="font-semibold text-yellow-800 mb-3">Key Implementation Notes</h4>
+            <ul class="text-yellow-700 space-y-2">
+              <li>• This is a high-level conceptual example</li>
+              <li>• Actual implementation depends on networking library (asyncio, Twisted)</li>
+              <li>• The correct sequence of operations is crucial, especially the initial ProtoHeartbeatEvent</li>
+              <li>• Always use proper error handling and connection management</li>
+            </ul>
+          </div>
+
+          <h3 id="error-handling" class="font-serif font-bold text-2xl text-navy mt-12 mb-6">Handling Server Responses and Potential Errors</h3>
+
+          <p class="text-gray-700 mb-6">
+            <strong>Robust error handling is crucial</strong> when working with the cTrader Open API. After sending each request, the client must be prepared to handle various server responses:
+          </p>
+
+          <div class="grid md:grid-cols-2 gap-6">
+            <div class="bg-white border border-gray-200 p-6 rounded-lg">
+              <h4 class="font-semibold text-green-800 mb-3">Expected Positive Responses</h4>
+              <ul class="text-green-700 space-y-2 text-sm">
+                <li>• <code>ProtoOAApplicationAuthRes</code> after <code>ProtoOAApplicationAuthReq</code></li>
+                <li>• <code>ProtoOAAccountAuthRes</code> after <code>ProtoOAAccountAuthReq</code></li>
+                <li>• These indicate successful completion of authentication steps</li>
+              </ul>
+            </div>
+            <div class="bg-white border border-gray-200 p-6 rounded-lg">
+              <h4 class="font-semibold text-red-800 mb-3">Error Scenarios</h4>
+              <ul class="text-red-700 space-y-2 text-sm">
+                <li>• <code>ProtoOAErrorRes</code> for invalid credentials or missing fields</li>
+                <li>• Unexpected message types indicating protocol violations</li>
+                <li>• Timeouts suggesting network or server issues</li>
+                <li>• Disconnections requiring reconnection strategies</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="bg-gray-100 p-6 rounded-lg mt-8">
+            <h4 class="font-semibold text-navy mb-3">
+              <i class="fas fa-info-circle mr-2"></i>Essential Practice
+            </h4>
+            <p class="text-gray-700">
+              <strong>Logging all sent and received messages, along with timestamps and error information, is essential for debugging authentication problems.</strong>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Troubleshooting -->
+      <section id="troubleshooting" class="bg-white">
+        <div class="section-content">
+          <div class="section-header">
+            <h2 class="font-serif font-bold text-3xl text-navy">Troubleshooting Common Authentication Problems</h2>
+          </div>
+
+          <p class="text-lg text-gray-700 leading-relaxed mb-8">
+            Authentication issues with the cTrader Open API can stem from various sources. Understanding common pitfalls can help in diagnosing and resolving these problems effectively.
+          </p>
+
+          <div class="grid lg:grid-cols-2 gap-8">
+            <div class="space-y-8">
+              <div class="bg-red-50 border border-red-200 p-6 rounded-lg">
+                <h3 class="font-semibold text-red-800 mb-4">
+                  <i class="fas fa-key mr-2"></i>Invalid or Expired Credentials
+                </h3>
+                <ul class="text-red-700 space-y-2 text-sm">
+                  <li>• <strong>clientId and clientSecret:</strong> Ensure they are copied correctly from cTrader Open API Apps page <a href="https://community.ctrader.com/forum/connect-api-support/45875/" class="citation" target="_blank">[7]</a>,
+                    <a href="https://community.ctrader.com/forum/connect-api-support/45875/" class="citation" target="_blank">[178]</a>
+                  </li>
+                  <li>• <strong>accessToken:</strong> Tokens have limited lifetime and may need refreshing <a href="https://community.ctrader.com/forum/connect-api-support/22829/" class="citation" target="_blank">[169]</a>
+                  </li>
+                  <li>• Check for typos, extra spaces, or incorrect case</li>
+                </ul>
+              </div>
+
+              <div class="bg-orange-50 border border-orange-200 p-6 rounded-lg">
+                <h3 class="font-semibold text-orange-800 mb-4">
+                  <i class="fas fa-code-branch mr-2"></i>Protocol Version Mismatch
+                </h3>
+                <ul class="text-orange-700 space-y-2 text-sm">
+                  <li>• Ensure you&#39;re using latest .proto files from official repository</li>
+                  <li>• Verify client library compatibility with current API version <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>
+                  </li>
+                  <li>• Use correct protoc version and plugin for code generation</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="space-y-8">
+              <div class="bg-blue-50 border border-blue-200 p-6 rounded-lg">
+                <h3 class="font-semibold text-blue-800 mb-4">
+                  <i class="fas fa-network-wired mr-2"></i>Network Connectivity Issues
+                </h3>
+                <ul class="text-blue-700 space-y-2 text-sm">
+                  <li>• Ensure outbound internet access to API endpoints</li>
+                  <li>• Check firewall settings for <code>demo.ctraderapi.com:5035</code> or <code>live.ctraderapi.com:5035</code>
+                    <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>
+                  </li>
+                  <li>• Verify DNS resolution for API hostnames</li>
+                  <li>• Ensure SSL/TLS handshakes can complete successfully</li>
+                </ul>
+              </div>
+
+              <div class="bg-purple-50 border border-purple-200 p-6 rounded-lg">
+                <h3 class="font-semibold text-purple-800 mb-4">
+                  <i class="fas fa-bug mr-2"></i>Debugging ctrader-open-api Library
+                </h3>
+                <ul class="text-purple-700 space-y-2 text-sm">
+                  <li>• <strong>Verify initial heartbeat:</strong> Check if library sends ProtoHeartbeatEvent before ProtoOAApplicationAuthReq</li>
+                  <li>• <strong>Check deserialization:</strong> Empty ProtoOAVersionRes messages may indicate heartbeat misinterpretation</li>
+                  <li>• <strong>Library version:</strong> Ensure latest compatible versions of dependencies <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[2]</a>,
+                    <a href="https://community.ctrader.com/forum/connect-api-support/46693/" class="citation" target="_blank">[153]</a>
+                  </li>
+                  <li>• <strong>Consider switching:</strong> Use official OpenApiPy SDK <a href="https://help.ctrader.com/open-api/" class="citation" target="_blank">[41]</a>,
+                    <a href="https://help.ctrader.com/open-api/" class="citation" target="_blank">[66]</a>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Best Practices -->
+      <section id="best-practices" class="bg-gray-50">
+        <div class="section-content">
+          <div class="section-header">
+            <h2 class="font-serif font-bold text-3xl text-navy">Best Practices for Stable cTrader Open API Connections</h2>
+          </div>
+
+          <p class="text-lg text-gray-700 leading-relaxed mb-8">
+            Maintaining stable and reliable connections to the cTrader Open API requires adherence to several best practices beyond just the initial authentication. These practices help manage the connection lifecycle, handle errors gracefully, and adapt to potential API changes.
+          </p>
+
+          <div class="grid lg:grid-cols-3 gap-8">
+            <div class="bg-white border border-gray-200 p-6 rounded-lg">
+              <div class="text-teal text-3xl mb-4">
+                <i class="fas fa-heartbeat"></i>
+              </div>
+              <h3 class="font-semibold text-navy mb-4">Adhering to Heartbeat Requirements</h3>
+              <ul class="text-gray-700 space-y-2 text-sm">
+                <li>• Send initial ProtoHeartbeatEvent (08 33 12 00) first</li>
+                <li>• Maintain periodic heartbeats every 10 seconds <a href="https://help.ctrader.com/open-api/faq/" class="citation" target="_blank">[51]</a>,
+                  <a href="https://help.ctrader.com/open-api/faq/" class="citation" target="_blank">[179]</a>
+                </li>
+                <li>• Account for network latency in timing</li>
+                <li>• Implement reliable heartbeat mechanism</li>
+              </ul>
+            </div>
+
+            <div class="bg-white border border-gray-200 p-6 rounded-lg">
+              <div class="text-teal text-3xl mb-4">
+                <i class="fas fa-shield-alt"></i>
+              </div>
+              <h3 class="font-semibold text-navy mb-4">Proper Error Handling and Logging</h3>
+              <ul class="text-gray-700 space-y-2 text-sm">
+                <li>• Catch and handle exceptions gracefully</li>
+                <li>• Log all API interactions with timestamps</li>
+                <li>• Monitor connection state changes</li>
+                <li>• Use appropriate log levels for filtering</li>
+              </ul>
+            </div>
+
+            <div class="bg-white border border-gray-200 p-6 rounded-lg">
+              <div class="text-teal text-3xl mb-4">
+                <i class="fas fa-sync-alt"></i>
+              </div>
+              <h3 class="font-semibold text-navy mb-4">Staying Updated</h3>
+              <ul class="text-gray-700 space-y-2 text-sm">
+                <li>• Monitor official API documentation changes</li>
+                <li>• Update .proto files periodically</li>
+                <li>• Keep SDK updated to latest version <a href="https://help.ctrader.com/open-api/" class="citation" target="_blank">[41]</a>,
+                  <a href="https://help.ctrader.com/open-api/" class="citation" target="_blank">[66]</a>
+                </li>
+                <li>• Follow community forums for issues</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="bg-teal-50 border border-teal-200 p-8 rounded-lg mt-12">
+            <h3 class="font-serif font-bold text-2xl text-teal-800 mb-6">Summary of Critical Success Factors</h3>
+            <div class="grid md:grid-cols-2 gap-8">
+              <div>
+                <h4 class="font-semibold text-teal-800 mb-3">Connection Establishment</h4>
+                <ul class="text-teal-700 space-y-2 text-sm">
+                  <li>• Establish secure SSL/TLS connection first</li>
+                  <li>• Send initial ProtoHeartbeatEvent (08 33 12 00) immediately</li>
+                  <li>• Only then send ProtoOAApplicationAuthReq</li>
+                  <li>• Wait for ProtoOAApplicationAuthRes before proceeding</li>
+                </ul>
+              </div>
+              <div>
+                <h4 class="font-semibold text-teal-800 mb-3">Session Maintenance</h4>
+                <ul class="text-teal-700 space-y-2 text-sm">
+                  <li>• Send periodic heartbeats every 10 seconds</li>
+                  <li>• Handle all server responses appropriately</li>
+                  <li>• Implement robust error handling</li>
+                  <li>• Monitor connection health continuously</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-12 text-center">
+            <div class="inline-block bg-navy text-white px-8 py-4 rounded-lg">
+              <p class="text-lg font-semibold">
+                <i class="fas fa-check-circle mr-2"></i>
+                Successful cTrader Open API integration requires attention to protocol details and proper implementation of the authentication sequence.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+        // Initialize Mermaid with custom styling
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#f8fafc',
+                primaryTextColor: '#1e293b',
+                primaryBorderColor: '#0d9488',
+                lineColor: '#64748b',
+                secondaryColor: '#f1f5f9',
+                tertiaryColor: '#e2e8f0',
+                background: '#ffffff',
+                mainBkg: '#f8fafc',
+                secondaryBkg: '#f1f5f9',
+                tertiaryBkg: '#e2e8f0',
+                primaryBorderColor: '#0d9488',
+                primaryTextColor: '#1e293b',
+                lineColor: '#64748b',
+                textColor: '#1e293b',
+                THEME_COLOR_LIMIT: 12
+            },
+            flowchart: {
+                useMaxWidth: false,
+                htmlLabels: true,
+                curve: 'basis',
+                padding: 20,
+                nodeSpacing: 50,
+                rankSpacing: 80,
+                diagramPadding: 20
+            },
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '14px'
+        });
+
+        // Initialize Mermaid Controls for zoom and pan
+        function initializeMermaidControls() {
+            const containers = document.querySelectorAll('.mermaid-container');
+
+            containers.forEach(container => {
+            const mermaidElement = container.querySelector('.mermaid');
+            let scale = 1;
+            let isDragging = false;
+            let startX, startY, translateX = 0, translateY = 0;
+
+            // 触摸相关状态
+            let isTouch = false;
+            let touchStartTime = 0;
+            let initialDistance = 0;
+            let initialScale = 1;
+            let isPinching = false;
+
+            // Zoom controls
+            const zoomInBtn = container.querySelector('.zoom-in');
+            const zoomOutBtn = container.querySelector('.zoom-out');
+            const resetBtn = container.querySelector('.reset-zoom');
+            const fullscreenBtn = container.querySelector('.fullscreen');
+
+            function updateTransform() {
+                mermaidElement.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+
+                if (scale > 1) {
+                container.classList.add('zoomed');
+                } else {
+                container.classList.remove('zoomed');
+                }
+
+                mermaidElement.style.cursor = isDragging ? 'grabbing' : 'grab';
+            }
+
+            if (zoomInBtn) {
+                zoomInBtn.addEventListener('click', () => {
+                scale = Math.min(scale * 1.25, 4);
+                updateTransform();
+                });
+            }
+
+            if (zoomOutBtn) {
+                zoomOutBtn.addEventListener('click', () => {
+                scale = Math.max(scale / 1.25, 0.3);
+                if (scale <= 1) {
+                    translateX = 0;
+                    translateY = 0;
+                }
+                updateTransform();
+                });
+            }
+
+            if (resetBtn) {
+                resetBtn.addEventListener('click', () => {
+                scale = 1;
+                translateX = 0;
+                translateY = 0;
+                updateTransform();
+                });
+            }
+
+            if (fullscreenBtn) {
+                fullscreenBtn.addEventListener('click', () => {
+                if (container.requestFullscreen) {
+                    container.requestFullscreen();
+                } else if (container.webkitRequestFullscreen) {
+                    container.webkitRequestFullscreen();
+                } else if (container.msRequestFullscreen) {
+                    container.msRequestFullscreen();
+                }
+                });
+            }
+
+            // Mouse Events
+            mermaidElement.addEventListener('mousedown', (e) => {
+                if (isTouch) return; // 如果是触摸设备，忽略鼠标事件
+
+                isDragging = true;
+                startX = e.clientX - translateX;
+                startY = e.clientY - translateY;
+                mermaidElement.style.cursor = 'grabbing';
+                updateTransform();
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isDragging && !isTouch) {
+                translateX = e.clientX - startX;
+                translateY = e.clientY - startY;
+                updateTransform();
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isDragging && !isTouch) {
+                isDragging = false;
+                mermaidElement.style.cursor = 'grab';
+                updateTransform();
+                }
+            });
+
+            document.addEventListener('mouseleave', () => {
+                if (isDragging && !isTouch) {
+                isDragging = false;
+                mermaidElement.style.cursor = 'grab';
+                updateTransform();
+                }
+            });
+
+            // 获取两点之间的距离
+            function getTouchDistance(touch1, touch2) {
+                return Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+                );
+            }
+
+            // Touch Events - 触摸事件处理
+            mermaidElement.addEventListener('touchstart', (e) => {
+                isTouch = true;
+                touchStartTime = Date.now();
+
+                if (e.touches.length === 1) {
+                // 单指拖动
+                isPinching = false;
+                isDragging = true;
+
+                const touch = e.touches[0];
+                startX = touch.clientX - translateX;
+                startY = touch.clientY - translateY;
+
+                } else if (e.touches.length === 2) {
+                // 双指缩放
+                isPinching = true;
+                isDragging = false;
+
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                initialDistance = getTouchDistance(touch1, touch2);
+                initialScale = scale;
+                }
+
+                e.preventDefault();
+            }, { passive: false });
+
+            mermaidElement.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1 && isDragging && !isPinching) {
+                // 单指拖动
+                const touch = e.touches[0];
+                translateX = touch.clientX - startX;
+                translateY = touch.clientY - startY;
+                updateTransform();
+
+                } else if (e.touches.length === 2 && isPinching) {
+                // 双指缩放
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                const currentDistance = getTouchDistance(touch1, touch2);
+
+                if (initialDistance > 0) {
+                    const newScale = Math.min(Math.max(
+                    initialScale * (currentDistance / initialDistance),
+                    0.3
+                    ), 4);
+                    scale = newScale;
+                    updateTransform();
+                }
+                }
+
+                e.preventDefault();
+            }, { passive: false });
+
+            mermaidElement.addEventListener('touchend', (e) => {
+                // 重置状态
+                if (e.touches.length === 0) {
+                isDragging = false;
+                isPinching = false;
+                initialDistance = 0;
+
+                // 延迟重置isTouch，避免鼠标事件立即触发
+                setTimeout(() => {
+                    isTouch = false;
+                }, 100);
+                } else if (e.touches.length === 1 && isPinching) {
+                // 从双指变为单指，切换为拖动模式
+                isPinching = false;
+                isDragging = true;
+
+                const touch = e.touches[0];
+                startX = touch.clientX - translateX;
+                startY = touch.clientY - translateY;
+                }
+
+                updateTransform();
+            });
+
+            mermaidElement.addEventListener('touchcancel', (e) => {
+                isDragging = false;
+                isPinching = false;
+                initialDistance = 0;
+
+                setTimeout(() => {
+                isTouch = false;
+                }, 100);
+
+                updateTransform();
+            });
+
+            // Enhanced wheel zoom with better center point handling
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const rect = container.getBoundingClientRect();
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+
+                const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                const newScale = Math.min(Math.max(scale * delta, 0.3), 4);
+
+                // Adjust translation to zoom towards center
+                if (newScale !== scale) {
+                const scaleDiff = newScale / scale;
+                translateX = translateX * scaleDiff;
+                translateY = translateY * scaleDiff;
+                scale = newScale;
+
+                if (scale <= 1) {
+                    translateX = 0;
+                    translateY = 0;
+                }
+
+                updateTransform();
+                }
+            });
+
+            // Initialize display
+            updateTransform();
+            });
+        }
+
+        // Call the function to initialize mermaid controls
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeMermaidControls();
+        });
+
+        // Smooth scrolling for TOC links
+        document.querySelectorAll('.toc-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href').substring(1);
+                const targetElement = document.getElementById(targetId);
+                if (targetElement) {
+                    targetElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Active TOC link highlighting
+        window.addEventListener('scroll', function() {
+            const sections = document.querySelectorAll('[id]');
+            const tocLinks = document.querySelectorAll('.toc-link');
+            
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.clientHeight;
+                if (window.pageYOffset >= sectionTop - 200) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            tocLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
+  
+
+</body></html>

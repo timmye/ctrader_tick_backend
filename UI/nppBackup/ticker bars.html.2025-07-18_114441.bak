@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FX Tick Visualizer</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      gap: 20px;
+      padding: 20px;
+    }
+
+    .module {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .bar-container, .pulse-container, .trail-container {
+      position: relative;
+      width: 40px;
+      height: 300px;
+      background: #222;
+      border: 1px solid #444;
+      margin-bottom: 10px;
+    }
+
+    .adr-bar {
+      position: absolute;
+      bottom: 50%;
+      width: 100%;
+      background: #4caf50;
+      transform-origin: bottom center;
+    }
+
+    .pulse-bar {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      bottom: 50%;
+      background: #2196f3;
+      transform-origin: bottom;
+    }
+
+    .float-valve {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 5px;
+      background: #ffc107;
+    }
+
+    .deflection-marker {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: red;
+    }
+
+    canvas {
+      border: 1px solid #444;
+      background: #222;
+    }
+
+    .label {
+      font-size: 14px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="module">
+  <div class="bar-container" id="adrBarContainer">
+    <div class="adr-bar" id="adrBar"></div>
+  </div>
+  <div class="label">ADR Displacement</div>
+</div>
+
+<div class="module">
+  <div class="pulse-container" id="pulseContainer">
+    <div class="pulse-bar" id="pulseBar"></div>
+    <div class="float-valve" id="floatValve"></div>
+    <div class="deflection-marker" id="maxMarker"></div>
+  </div>
+  <div class="label">Tick Pulse</div>
+</div>
+
+<div class="module">
+  <canvas id="tickTrail" width="200" height="300"></canvas>
+  <div class="label">Tick Trail</div>
+</div>
+
+<script>
+  // Central Tick Engine
+  const TICK_INTERVAL = 250;
+  const PIP = 0.0001;
+  const ADR = 0.0100; // 100 pips
+  const TICKS_PER_DAY = ADR / PIP;
+  const BASE_PRICE = 1.1000;
+
+  let price = BASE_PRICE;
+  let openPrice = BASE_PRICE;
+  let lastTickTime = Date.now();
+  let maxDeflection = 0;
+  let floatY = 150; // Initial float value in px center
+
+  const adrBar = document.getElementById("adrBar");
+  const pulseBar = document.getElementById("pulseBar");
+  const floatValve = document.getElementById("floatValve");
+  const deflectionMarker = document.getElementById("maxMarker");
+
+  const trailCanvas = document.getElementById("tickTrail");
+  const ctx = trailCanvas.getContext("2d");
+  const trail = Array(trailCanvas.width).fill(150);
+
+  function simulateTick() {
+    const now = Date.now();
+    const elapsed = (now - lastTickTime) / 1000;
+    lastTickTime = now;
+
+    const vol = Math.random() * 3 - 1.5; // -1.5 to +1.5 pips
+    const delta = vol * PIP;
+    price += delta;
+
+    updateDisplays(delta);
+  }
+
+  function updateDisplays(delta) {
+    // 1. ADR Bar
+    const maxHeight = 300;
+    const displacement = (price - openPrice) / ADR;
+    const px = displacement * (maxHeight / 2);
+    adrBar.style.height = Math.abs(px) + "px";
+    adrBar.style.bottom = px >= 0 ? "50%" : `calc(50% - ${Math.abs(px)}px)`;
+    adrBar.style.background = px >= 0 ? "#4caf50" : "#f44336";
+
+    // 2. Pulse bar
+    const pulseHeight = Math.min(Math.abs(delta) * 10000 * 5, maxHeight / 2); // 5px per pip
+    if (pulseHeight > 5) {
+      pulseBar.style.height = pulseHeight + "px";
+      pulseBar.style.bottom = delta >= 0 ? "50%" : `calc(50% - ${pulseHeight}px)`;
+      pulseBar.style.background = delta >= 0 ? "#2196f3" : "#ff5722";
+    }
+
+    // 3. Float Valve - inertia
+    floatY += (-delta / PIP) * 1.2; // sensitivity multiplier
+    floatY = Math.max(0, Math.min(maxHeight, floatY));
+    floatValve.style.top = floatY + "px";
+
+    // 4. Max deflection marker
+    const deflection = Math.abs(delta / PIP);
+    if (deflection > maxDeflection) {
+      maxDeflection = deflection;
+      const px = (delta >= 0 ? 150 - deflection * 2 : 150 + deflection * 2);
+      deflectionMarker.style.top = `${px}px`;
+    }
+
+    // 5. Tick Trail
+    const y = 150 - (price - openPrice) / PIP;
+    trail.unshift(y);
+    trail.pop();
+    drawTrail();
+  }
+
+  function drawTrail() {
+    ctx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+    ctx.beginPath();
+    ctx.moveTo(0, trail[0]);
+    for (let i = 1; i < trail.length; i++) {
+      ctx.lineTo(i, trail[i]);
+    }
+    ctx.strokeStyle = "#00e676";
+    ctx.stroke();
+
+    // center line
+    ctx.beginPath();
+    ctx.moveTo(0, 150);
+    ctx.lineTo(trailCanvas.width, 150);
+    ctx.strokeStyle = "#555";
+    ctx.stroke();
+  }
+
+  setInterval(simulateTick, TICK_INTERVAL);
+</script>
+
+</body>
+</html>

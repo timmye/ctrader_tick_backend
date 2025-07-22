@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adaptive FX Flow Meter Testbed</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://css.gg/css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+            color: #d1d5db; /* text-gray-300 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .control-panel {
+            background-color: rgba(31, 41, 55, 0.8); /* bg-gray-800 with opacity */
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(75, 85, 99, 0.5);
+        }
+        .control-label {
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: #4b5563; border-radius: 5px; outline: none; opacity: 0.7; transition: opacity .2s; }
+        input[type="range"]:hover { opacity: 1; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: #60a5fa; cursor: pointer; border-radius: 50%; border: 2px solid #1f2937; }
+        input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; background: #60a5fa; cursor: pointer; border-radius: 50%; border: 2px solid #1f2937; }
+        select { background-color: #374151; border-color: #4b5563; }
+
+        /* Toggle Switch Styles */
+        .toggle-label { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+        .toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4b5563; transition: .4s; border-radius: 22px; }
+        .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .toggle-slider { background-color: #3b82f6; }
+        input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+        /* Visualization Area Sizing */
+        .viz-wrapper {
+            width: 120px;
+            height: 220px;
+            border: 1px solid #374151;
+            padding: 0;
+            margin-right: 1rem;
+        }
+        .visualization-container { position: relative; width: 100%; height: 100%; overflow: hidden; }
+        #dayRangeMeter { position: absolute; left: 50%; top: 0; transform: translateX(-50%); background-color: #374151; border-radius: 4px; height: 100%; }
+        .adr-step { position: absolute; width: 10px; height: 1px; background-color: #6b7280; left: -15px; }
+        #priceFloat { position: absolute; width: 100%; height: 3px; background-color: #9ca3af; transition: transform 0.1s linear, background-color 0.3s ease; z-index: 10; }
+        #tickPulseContainer { position: absolute; top: 50%; left: 0; width: 100%; height: 3px; transform: translateY(-50%); }
+        #tickPulse { position: absolute; height: 100%; background: linear-gradient(to right, transparent, #f87171, #ef4444); transition: width 0.05s ease-out; transform-origin: left; }
+        
+        /* New Distribution Dot Style */
+        .distribution-dot {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #maxDeflectionMarker { position: absolute; width: 2px; height: 9px; background-color: #fca5a5; opacity: 0; transition: opacity 0.5s ease-in-out, transform 0.1s linear; z-index: 5; top: 50%; transform: translateY(-50%); }
+        #volatilityOrb { position: absolute; top: 50%; left: 50%; border-radius: 50%; background: radial-gradient(circle, rgba(59, 130, 246, 0) 0%, rgba(59, 130, 246, 0.1) 40%, rgba(59, 130, 246, 0.2) 60%, rgba(59, 130, 246, 0) 100%); transition: transform 1.5s ease-in-out, opacity 1.5s ease-in-out; transform-origin: center; z-index: 1; }
+        .pressure-arc { position: absolute; top: 50%; left: 50%; width: 150%; height: 150%; border-radius: 50%; border: 2px solid transparent; transition: all 0.2s ease-out; transform-origin: center; z-index: 5; }
+        .event-ripple { position: absolute; border-radius: 50%; border: 1px solid #60a5fa; animation: ripple-effect 1.5s ease-out forwards; z-index: 2; }
+        @keyframes ripple-effect { from { transform: scale(0); opacity: 0.8; } to { transform: scale(3); opacity: 0; } }
+    </style>
+</head>
+<body class="flex-col md:flex-row h-screen overflow-hidden">
+
+    <!-- Main Visualization Area -->
+    <main class="flex-shrink-0 viz-wrapper">
+        <div id="visualizationContainer" class="visualization-container">
+            <div id="volatilityOrb"></div>
+             <div id="distributionContainer" class="absolute top-0 left-0 w-full h-full pointer-events-none z-3"></div>
+            <div id="dayRangeMeter">
+                <div id="priceFloat">
+                    <div id="pressureArcUp" class="pressure-arc"></div>
+                    <div id="pressureArcDown" class="pressure-arc"></div>
+                    <div id="tickPulseContainer">
+                        <div id="tickPulse"></div>
+                        <div id="maxDeflectionMarker"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="rippleContainer" class="absolute top-0 left-0 w-full h-full pointer-events-none z-2"></div>
+        </div>
+    </main>
+
+    <!-- Control Panel -->
+    <aside class="w-full md:w-80 lg:w-96 p-4 overflow-y-auto control-panel flex-shrink-0">
+        <h1 class="text-xl font-bold text-white mb-4">Adaptive Flow Meter</h1>
+        <p class="text-sm text-gray-400 mb-6">Tune the simulation and visual feedback.</p>
+
+        <div class="space-y-5">
+            <!-- Simulation Controls -->
+            <div>
+                <h2 class="text-lg font-semibold text-blue-300 mb-3">Simulation</h2>
+                <label class="control-label text-gray-300" for="frequencyMode">Market Activity</label>
+                <select id="frequencyMode" class="w-full p-2 rounded mt-1 text-sm">
+                    <option value="calm">Calm</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="active">Active</option>
+                    <option value="volatile">Volatile</option>
+                </select>
+            </div>
+
+            <!-- Meter Controls -->
+            <div>
+                <h2 class="text-lg font-semibold text-blue-300 mb-3">Meter & Pulse</h2>
+                <label class="control-label" for="adrRange">ADR (pips): <span id="adrRangeValue">100</span></label>
+                <input type="range" id="adrRange" min="20" max="300" value="100" class="w-full mt-1">
+                <label class="control-label mt-3 block" for="pulseThreshold">Pulse Threshold (pips): <span id="pulseThresholdValue">0.5</span></label>
+                <input type="range" id="pulseThreshold" min="0.1" max="5" step="0.1" value="0.5" class="w-full mt-1">
+                <label class="control-label mt-3 block" for="pulseScale">Pulse Scale (px/pip): <span id="pulseScaleValue">5</span></label>
+                <input type="range" id="pulseScale" min="1" max="20" value="5" class="w-full mt-1">
+            </div>
+
+            <!-- Event Highlighting -->
+            <div>
+                <h2 class="text-lg font-semibold text-blue-300 mb-3">Event Highlighting</h2>
+                <label class="control-label" for="maxMarkerDecay">Max Marker Decay (s): <span id="maxMarkerDecayValue">10</span></label>
+                <input type="range" id="maxMarkerDecay" min="2" max="30" value="10" class="w-full mt-1">
+                <label class="control-label mt-3 block" for="flashThreshold">Flash Threshold (pips): <span id="flashThresholdValue">5</span></label>
+                <input type="range" id="flashThreshold" min="2" max="20" value="5" class="w-full mt-1">
+            </div>
+            
+            <!-- Effect Toggles -->
+            <div>
+                 <h2 class="text-lg font-semibold text-blue-300 mb-3">Effect Toggles</h2>
+                 <div class="space-y-2 text-sm">
+                    <label class="toggle-label"><span>Tick Pulse</span><div class="toggle-switch"><input type="checkbox" id="toggleTickPulse" checked><span class="toggle-slider"></span></div></label>
+                    <label class="toggle-label"><span>Max Marker</span><div class="toggle-switch"><input type="checkbox" id="toggleMaxMarker" checked><span class="toggle-slider"></span></div></label>
+                    <label class="toggle-label"><span>Distribution Dots</span><div class="toggle-switch"><input type="checkbox" id="toggleDistDots" checked><span class="toggle-slider"></span></div></label>
+                    <label class="toggle-label"><span>Volatility Orb</span><div class="toggle-switch"><input type="checkbox" id="toggleVolatilityOrb" checked><span class="toggle-slider"></span></div></label>
+                    <label class="toggle-label"><span>Pressure Arcs</span><div class="toggle-switch"><input type="checkbox" id="togglePressureArcs" checked><span class="toggle-slider"></span></div></label>
+                    <label class="toggle-label"><span>Event Ripples</span><div class="toggle-switch"><input type="checkbox" id="toggleEventRipples" checked><span class="toggle-slider"></span></div></label>
+                 </div>
+            </div>
+        </div>
+    </aside>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- DOM ELEMENT REFERENCES ---
+    const vizContainer = document.getElementById('visualizationContainer');
+    const dayRangeMeter = document.getElementById('dayRangeMeter');
+    const priceFloat = document.getElementById('priceFloat');
+    const tickPulse = document.getElementById('tickPulse');
+    const maxDeflectionMarker = document.getElementById('maxDeflectionMarker');
+    const rippleContainer = document.getElementById('rippleContainer');
+    const volatilityOrb = document.getElementById('volatilityOrb');
+    const pressureArcUp = document.getElementById('pressureArcUp');
+    const pressureArcDown = document.getElementById('pressureArcDown');
+    const distributionContainer = document.getElementById('distributionContainer');
+
+    // --- CONFIGURATION & STATE ---
+    const config = {
+        adrRange: 100,
+        pulseThreshold: 0.5,
+        pulseScale: 5,
+        maxMarkerDecay: 10000,
+        flashThreshold: 5,
+        frequencyMode: 'normal',
+        meterHeight: 220,
+        meterWidth: 8,
+        // Toggles
+        showTickPulse: true,
+        showMaxMarker: true,
+        showDistDots: true,
+        showVolatilityOrb: true,
+        showPressureArcs: true,
+        showEventRipples: true,
+    };
+
+    const state = {
+        currentPrice: 1.25500,
+        midPrice: 1.25500, // This will act as the center of the ADR
+        lastTickTime: 0,
+        ticks: [],
+        maxDeflection: { up: 0, down: 0, lastUpdateTime: 0 },
+        pressure: { up: 0, down: 0 },
+        volatility: 0,
+    };
+
+    // --- CONTROL PANEL WIRING ---
+    const controls = {
+        adrRange: document.getElementById('adrRange'),
+        pulseThreshold: document.getElementById('pulseThreshold'),
+        pulseScale: document.getElementById('pulseScale'),
+        maxMarkerDecay: document.getElementById('maxMarkerDecay'),
+        flashThreshold: document.getElementById('flashThreshold'),
+        frequencyMode: document.getElementById('frequencyMode'),
+        // Toggles
+        toggleTickPulse: document.getElementById('toggleTickPulse'),
+        toggleMaxMarker: document.getElementById('toggleMaxMarker'),
+        toggleDistDots: document.getElementById('toggleDistDots'),
+        toggleVolatilityOrb: document.getElementById('toggleVolatilityOrb'),
+        togglePressureArcs: document.getElementById('togglePressureArcs'),
+        toggleEventRipples: document.getElementById('toggleEventRipples'),
+    };
+
+    const valueSpans = {
+        adrRangeValue: document.getElementById('adrRangeValue'),
+        pulseThresholdValue: document.getElementById('pulseThresholdValue'),
+        pulseScaleValue: document.getElementById('pulseScaleValue'),
+        maxMarkerDecayValue: document.getElementById('maxMarkerDecayValue'),
+        flashThresholdValue: document.getElementById('flashThresholdValue'),
+    };
+
+    function setupControls() {
+        // Handle sliders and selects
+        ['adrRange', 'pulseThreshold', 'pulseScale', 'maxMarkerDecay', 'flashThreshold', 'frequencyMode'].forEach(key => {
+            controls[key].addEventListener('input', (e) => {
+                const value = e.target.type === 'range' ? parseFloat(e.target.value) : e.target.value;
+                config[key] = value;
+                if (valueSpans[key + 'Value']) {
+                    valueSpans[key + 'Value'].textContent = value;
+                }
+                if (key === 'adrRange') setupDayRangeMeter();
+            });
+        });
+
+        // Handle toggles
+        ['TickPulse', 'MaxMarker', 'DistDots', 'VolatilityOrb', 'PressureArcs', 'EventRipples'].forEach(name => {
+            const key = `show${name}`;
+            const toggleKey = `toggle${name}`;
+            controls[toggleKey].addEventListener('change', (e) => {
+                config[key] = e.target.checked;
+                // Immediately apply visibility change
+                updateElementVisibility();
+            });
+        });
+    }
+
+    function updateElementVisibility() {
+        tickPulse.style.display = config.showTickPulse ? 'block' : 'none';
+        maxDeflectionMarker.style.display = config.showMaxMarker ? 'block' : 'none';
+        volatilityOrb.style.display = config.showVolatilityOrb ? 'block' : 'none';
+        pressureArcUp.style.display = config.showPressureArcs ? 'block' : 'none';
+        pressureArcDown.style.display = config.showPressureArcs ? 'block' : 'none';
+        distributionContainer.style.display = config.showDistDots ? 'block' : 'none';
+    }
+
+
+    // --- INITIAL SETUP ---
+    function setupDayRangeMeter() {
+        dayRangeMeter.style.width = `${config.meterWidth}px`;
+        const adrStepsContainer = document.createDocumentFragment();
+        [0, 0.25, 0.5, 0.75, 1].forEach(step => {
+            if(step === 0 || step === 1) return; // No need for markers at very top/bottom
+            const marker = document.createElement('div');
+            marker.className = 'adr-step';
+            marker.style.top = `${step * 100}%`;
+            adrStepsContainer.appendChild(marker);
+        });
+        dayRangeMeter.innerHTML = '';
+        dayRangeMeter.appendChild(adrStepsContainer);
+        dayRangeMeter.appendChild(priceFloat);
+    }
+
+    // --- TICK SIMULATOR ---
+    function generateTick() {
+        const now = performance.now();
+        const frequencySettings = {
+            calm: { baseInterval: 2000, randomness: 1500 },
+            normal: { baseInterval: 800, randomness: 1000 },
+            active: { baseInterval: 300, randomness: 400 },
+            volatile: { baseInterval: 100, randomness: 200 },
+        };
+        const settings = frequencySettings[config.frequencyMode];
+        if (now - state.lastTickTime < (settings.baseInterval + (Math.random() * settings.randomness))) return;
+
+        const direction = Math.random() > 0.5 ? 1 : -1;
+        const rand = Math.random();
+        let magnitude = (rand < 0.8) ? Math.random() * 0.8 : (rand < 0.98) ? 0.8 + Math.random() * 2 : 3 + Math.random() * 5;
+        if (config.frequencyMode === 'volatile') magnitude *= 1.5;
+
+        const tick = {
+            magnitude: parseFloat(magnitude.toFixed(1)),
+            direction: direction,
+            price: state.currentPrice + (direction * magnitude / 10000)
+        };
+        
+        state.currentPrice = tick.price;
+        state.lastTickTime = now;
+        processTick(tick);
+    }
+
+    // --- TICK PROCESSING & UI UPDATES ---
+    function processTick(tick) {
+        state.ticks.push({ ...tick, time: performance.now() });
+        updateDayRangeMeter(tick);
+        if (tick.magnitude >= config.pulseThreshold) {
+            if (config.showTickPulse) updateTickPulse(tick);
+            if (config.showDistDots) createDistributionDot(tick);
+        }
+        if (config.showMaxMarker) updateMaxDeflection(tick);
+        if (config.showPressureArcs) updatePressure(tick);
+        if (config.showEventRipples && tick.magnitude >= 3) createEventRipple(tick);
+        if (tick.magnitude >= config.flashThreshold) flashMeter(tick.direction);
+    }
+
+    function updateDayRangeMeter(tick) {
+        const adrInPrice = config.adrRange / 10000;
+        const lowPrice = state.midPrice - (adrInPrice / 2);
+        let percentage = (state.currentPrice - lowPrice) / adrInPrice;
+        percentage = Math.max(0, Math.min(1, percentage)); // Clamp
+
+        priceFloat.style.transform = `translateY(${ (1 - percentage) * config.meterHeight - (priceFloat.offsetHeight / 2)}px)`;
+        priceFloat.style.backgroundColor = tick.direction > 0 ? '#60a5fa' : '#f87171';
+        setTimeout(() => { priceFloat.style.backgroundColor = '#9ca3af'; }, 300);
+    }
+
+    function updateTickPulse(tick) {
+        const pulseWidth = Math.min(tick.magnitude * config.pulseScale, (vizContainer.offsetWidth / 2) - config.meterWidth);
+        tickPulse.style.transformOrigin = tick.direction > 0 ? 'left' : 'right';
+        tickPulse.style.left = tick.direction > 0 ? `${config.meterWidth}px` : 'auto';
+        tickPulse.style.right = tick.direction < 0 ? `${config.meterWidth}px` : 'auto';
+        tickPulse.style.background = tick.direction > 0 ? 'linear-gradient(to right, transparent, #60a5fa, #3b82f6)' : 'linear-gradient(to left, transparent, #f87171, #ef4444)';
+        tickPulse.style.width = `${pulseWidth}px`;
+        setTimeout(() => { tickPulse.style.width = '0px'; }, 150);
+    }
+
+    function createDistributionDot(tick) {
+        const dot = document.createElement('div');
+        dot.className = 'distribution-dot';
+        
+        const adrInPrice = config.adrRange / 10000;
+        const lowPrice = state.midPrice - (adrInPrice / 2);
+        let pricePercent = (state.currentPrice - lowPrice) / adrInPrice;
+        pricePercent = Math.max(0, Math.min(1, pricePercent));
+
+        const horizontalOffset = Math.min(tick.magnitude * config.pulseScale, (vizContainer.offsetWidth / 2) - (config.meterWidth / 2) - 5);
+        const meterCenter = vizContainer.offsetWidth / 2;
+        
+        dot.style.top = `${(1 - pricePercent) * config.meterHeight}px`;
+        dot.style.left = `${meterCenter + (tick.direction * ((config.meterWidth / 2) + horizontalOffset))}px`;
+        dot.style.backgroundColor = tick.direction > 0 ? 'rgba(96, 165, 250, 0.7)' : 'rgba(248, 113, 113, 0.7)';
+        
+        distributionContainer.appendChild(dot);
+    }
+
+    function updateMaxDeflection(tick) {
+        const now = performance.now();
+        if (now - state.maxDeflection.lastUpdateTime > config.maxMarkerDecay) {
+            state.maxDeflection.up = 0;
+            state.maxDeflection.down = 0;
+        }
+        let updated = false;
+        if (tick.direction > 0 && tick.magnitude > state.maxDeflection.up) { state.maxDeflection.up = tick.magnitude; updated = true; }
+        if (tick.direction < 0 && tick.magnitude > state.maxDeflection.down) { state.maxDeflection.down = tick.magnitude; updated = true; }
+        if (updated) state.maxDeflection.lastUpdateTime = now;
+    }
+
+    function renderMaxDeflection() {
+        if (!config.showMaxMarker) return;
+        const now = performance.now();
+        const timeSinceUpdate = now - state.maxDeflection.lastUpdateTime;
+        const decayProgress = Math.min(timeSinceUpdate / config.maxMarkerDecay, 1);
+        if (decayProgress >= 1) {
+            if (maxDeflectionMarker.style.opacity !== '0') maxDeflectionMarker.style.opacity = '0';
+            return;
+        }
+        const upPosition = state.maxDeflection.up * config.pulseScale;
+        const downPosition = state.maxDeflection.down * config.pulseScale;
+        if (upPosition > downPosition) {
+            maxDeflectionMarker.style.transform = `translateX(${upPosition}px) translateY(-50%)`;
+            maxDeflectionMarker.style.left = `${config.meterWidth}px`;
+            maxDeflectionMarker.style.backgroundColor = '#60a5fa';
+        } else {
+            maxDeflectionMarker.style.transform = `translateX(${-downPosition}px) translateY(-50%)`;
+            maxDeflectionMarker.style.left = `0px`;
+            maxDeflectionMarker.style.backgroundColor = '#f87171';
+        }
+        maxDeflectionMarker.style.opacity = `${0.7 * (1 - decayProgress)}`;
+    }
+    
+    // --- IDEATION CONCEPT IMPLEMENTATIONS ---
+    function updateVolatility() {
+        if (!config.showVolatilityOrb) return;
+        const lookback = 5000;
+        const now = performance.now();
+        state.ticks = state.ticks.filter(t => now - t.time < lookback);
+        if (state.ticks.length < 5) { state.volatility *= 0.99; return; }
+        const magnitudes = state.ticks.map(t => t.magnitude);
+        const avgMagnitude = magnitudes.reduce((a, b) => a + b, 0) / magnitudes.length;
+        const frequency = state.ticks.length / (lookback / 1000);
+        const volScore = (avgMagnitude * 0.5) + (frequency * 0.5);
+        state.volatility = state.volatility * 0.95 + volScore * 0.05;
+    }
+
+    function renderVolatilityOrb() {
+        if (!config.showVolatilityOrb) return;
+        const scale = 1 + Math.min(state.volatility * 0.5, 2);
+        const opacity = 0.5 + Math.min(state.volatility * 0.2, 0.5);
+        const size = Math.min(vizContainer.offsetHeight, vizContainer.offsetWidth) * 1.5;
+        volatilityOrb.style.width = `${size}px`;
+        volatilityOrb.style.height = `${size}px`;
+        volatilityOrb.style.transform = `translate(-50%, -50%) scale(${scale})`;
+        volatilityOrb.style.opacity = opacity;
+    }
+
+    function updatePressure(tick) {
+        if (tick.direction > 0) { state.pressure.up += tick.magnitude; state.pressure.down *= 0.85; }
+        else { state.pressure.down += tick.magnitude; state.pressure.up *= 0.85; }
+    }
+    
+    function renderPressureArcs() {
+        if (!config.showPressureArcs) return;
+        state.pressure.up = Math.min(state.pressure.up * 0.995, 50);
+        state.pressure.down = Math.min(state.pressure.down * 0.995, 50);
+        const upPressureValue = state.pressure.up;
+        pressureArcUp.style.borderColor = `rgba(96, 165, 250, ${Math.min(upPressureValue / 50, 0.8)})`;
+        pressureArcUp.style.borderTopWidth = `${2 + upPressureValue / 5}px`;
+        pressureArcUp.style.borderRightWidth = `${2 + upPressureValue / 5}px`;
+        pressureArcUp.style.transform = `translate(-50%, -50%) rotate(45deg) scaleX(${1 + upPressureValue / 100})`;
+        const downPressureValue = state.pressure.down;
+        pressureArcDown.style.borderColor = `rgba(248, 113, 113, ${Math.min(downPressureValue / 50, 0.8)})`;
+        pressureArcDown.style.borderBottomWidth = `${2 + downPressureValue / 5}px`;
+        pressureArcDown.style.borderLeftWidth = `${2 + downPressureValue / 5}px`;
+        pressureArcDown.style.transform = `translate(-50%, -50%) rotate(45deg) scaleX(${1 + downPressureValue / 100})`;
+    }
+
+    function createEventRipple(tick) {
+        const ripple = document.createElement('div');
+        ripple.className = 'event-ripple';
+        const floatRect = priceFloat.getBoundingClientRect();
+        const containerRect = vizContainer.getBoundingClientRect();
+        ripple.style.left = `${floatRect.left - containerRect.left + (floatRect.width / 2)}px`;
+        ripple.style.top = `${floatRect.top - containerRect.top + (floatRect.height / 2)}px`;
+        const size = 20 + tick.magnitude * 10;
+        ripple.style.width = `${size}px`;
+        ripple.style.height = `${size}px`;
+        ripple.style.borderColor = tick.direction > 0 ? '#60a5fa' : '#f87171';
+        rippleContainer.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 1500);
+    }
+    
+    function flashMeter(direction) {
+        const flashDiv = document.createElement('div');
+        flashDiv.style.cssText = 'position:absolute; top:0; left:0; width:100%; height:100%; z-index:100; opacity:0.5; transition:opacity 0.3s ease-out; pointer-events:none;';
+        flashDiv.style.background = direction > 0 ? 'radial-gradient(circle, rgba(96,165,250,0.8) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(248,113,113,0.8) 0%, transparent 70%)';
+        vizContainer.appendChild(flashDiv);
+        setTimeout(() => { flashDiv.style.opacity = '0'; setTimeout(() => flashDiv.remove(), 300); }, 50);
+    }
+
+    // --- MAIN ANIMATION LOOP ---
+    function gameLoop() {
+        generateTick();
+        renderMaxDeflection();
+        updateVolatility();
+        renderVolatilityOrb();
+        renderPressureArcs();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // --- INITIALIZATION ---
+    setupControls();
+    setupDayRangeMeter();
+    updateElementVisibility();
+    requestAnimationFrame(gameLoop);
+});
+</script>
+
+</body>
+</html>

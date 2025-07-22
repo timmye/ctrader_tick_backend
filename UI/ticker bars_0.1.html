@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Ticker Display - Refined: Discrete ADR & Fixed Threshold</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for elements not easily covered by Tailwind or for specific overrides */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter font as per instructions */
+        }
+        .bar-fill, .pulse-fill {
+            transform-origin: center bottom;
+            transition: all 0.1s ease-out;
+        }
+        .max-marker {
+            transition: opacity 0.3s ease-out;
+        }
+        .trail-dot {
+            transition: opacity 0.5s ease-out;
+        }
+        .flash-overlay {
+            transition: opacity 0.1s ease-out;
+            pointer-events: none; /* Ensure it doesn't block clicks */
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        .status-indicator {
+            animation: pulse 2s infinite;
+        }
+        /* Ensure the bar containers maintain their aspect ratio or fixed height on smaller screens */
+        .bar-container, .thin-bar-container, .trail-container {
+            height: 300px; /* Fixed height for visual consistency of bars */
+        }
+        /* Hide scrollbar for controls panel but allow scrolling */
+        .controls-panel::-webkit-scrollbar {
+            display: none;
+        }
+        .controls-panel {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex justify-center items-center min-h-screen p-4 overflow-hidden">
+    <div id="status-indicator" class="absolute top-4 right-4 w-3 h-3 rounded-full bg-green-500"></div>
+    
+    <div class="main-container flex flex-col lg:flex-row gap-5 items-start w-full max-w-6xl">
+        <!-- Ticker Display Area -->
+        <div class="ticker-container flex flex-wrap justify-center lg:justify-end gap-6 flex-1">
+            <!-- Main Price Display -->
+            <div class="component flex flex-col items-center gap-2 p-3 bg-gray-800 rounded-lg shadow-md w-full sm:w-auto min-w-[150px]">
+                <div class="component-label text-xs text-gray-400 text-center min-h-6 flex flex-col justify-center">
+                    <div>EUR/USD</div>
+                    <div id="main-price" class="text-sm text-green-400 font-bold">1.10000</div>
+                </div>
+                <div id="price-display" class="h-auto flex items-center text-3xl font-extrabold text-white">
+                    1.10000
+                </div>
+                <div id="tick-stats" class="stats-display text-xs text-gray-500 text-center mt-1">
+                    Ticks: 0 | Rate: 0/min
+                </div>
+            </div>
+
+            <!-- ADR Position Bar -->
+            <div class="component flex flex-col items-center gap-2 p-3 bg-gray-800 rounded-lg shadow-md w-full sm:w-auto min-w-[100px]">
+                <div class="component-label text-xs text-gray-400 text-center min-h-6 flex flex-col justify-center">
+                    <div>ADR Position</div>
+                    <div id="adr-value" class="text-sm text-green-400 font-bold">0%</div>
+                </div>
+                <div id="adr-bar" class="bar-container relative w-16 bg-gray-700 border border-gray-600 rounded-md overflow-hidden">
+                    <div id="adr-fill" class="bar-fill absolute w-full bg-blue-500" style="height: 0;"></div>
+                    <div class="zero-line absolute w-full h-px bg-gray-500 top-1/2 -translate-y-1/2"></div>
+                    <div id="adr-steps" class="adr-steps absolute left-[-20px] top-0 h-full w-4 text-xs text-gray-500"></div>
+                    <div id="adr-flash" class="flash-overlay absolute inset-0 bg-green-500 opacity-0 rounded-md"></div>
+                </div>
+            </div>
+
+            <!-- Tick Pulse Float Bar -->
+            <div class="component flex flex-col items-center gap-2 p-3 bg-gray-800 rounded-lg shadow-md w-full sm:w-auto min-w-[80px]">
+                <div class="component-label text-xs text-gray-400 text-center min-h-6 flex flex-col justify-center">
+                    <div>Tick Pulse</div>
+                    <div id="pulse-value" class="text-sm text-green-400 font-bold">0.0 pips</div>
+                </div>
+                <div id="pulse-bar" class="thin-bar-container relative w-3 bg-gray-700 border border-gray-600 rounded-md overflow-hidden">
+                    <div id="pulse-fill" class="pulse-fill absolute w-full bg-green-500" style="height: 0;"></div>
+                    <div id="max-pos" class="max-marker absolute w-full h-0.5 bg-orange-500 left-0 opacity-0" style="top: 50%;"></div>
+                    <div id="max-neg" class="max-marker absolute w-full h-0.5 bg-orange-500 left-0 opacity-0" style="top: 50%;"></div>
+                    <div class="zero-line absolute w-full h-px bg-gray-500 top-1/2 -translate-y-1/2"></div>
+                    <div id="pulse-flash" class="flash-overlay absolute inset-0 bg-green-500 opacity-0 rounded-md"></div>
+                </div>
+            </div>
+
+            <!-- Tick Trail Distribution -->
+            <div class="component flex flex-col items-center gap-2 p-3 bg-gray-800 rounded-lg shadow-md w-full sm:w-auto min-w-[180px]">
+                <div class="component-label text-xs text-gray-400 text-center min-h-6 flex flex-col justify-center">
+                    <div>Tick Distribution</div>
+                    <div id="trail-value" class="text-sm text-green-400 font-bold">TPO Profile</div>
+                </div>
+                <div id="trail-container" class="trail-container relative w-40 bg-gray-700 border border-gray-600 rounded-md overflow-hidden">
+                    <div class="zero-line absolute w-full h-px bg-gray-500 top-1/2 -translate-y-1/2"></div>
+                    <div id="price-levels" class="price-levels absolute right-[-40px] top-0 h-full w-9 text-xs text-gray-500"></div>
+                </div>
+                <div id="distribution-stats" class="stats-display text-xs text-gray-500 text-center mt-1">
+                    Levels: 0 | Max: 0
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls Panel -->
+        <div class="controls-panel bg-gray-800 border border-gray-700 p-4 rounded-lg shadow-lg min-w-[250px] max-h-[calc(100vh-2rem)] overflow-y-auto">
+            <h3 class="mt-0 text-base text-green-400 mb-4">Settings</h3>
+            
+            <div class="control-group mb-4">
+                <label class="block text-xs text-gray-400 mb-1">Tick Pulse Threshold (pips)</label>
+                <input type="range" id="threshold-slider" min="0.1" max="5.0" step="0.1" value="1.0" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                <div id="threshold-value" class="value-display text-xs text-green-400 mt-1">1.0 pips</div>
+            </div>
+
+            <div class="control-group mb-4">
+                <label class="block text-xs text-gray-400 mb-1">ADR Range (pips)</label>
+                <input type="range" id="adr-slider" min="50" max="200" step="10" value="100" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                <div id="adr-display" class="value-display text-xs text-green-400 mt-1">100 pips</div>
+            </div>
+
+            <div class="control-group mb-4">
+                <label class="block text-xs text-gray-400 mb-1">TPO Scale Range (pips)</label>
+                <input type="range" id="pulse-scale-slider" min="2" max="20" step="1" value="5" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                <div id="pulse-scale-value" class="value-display text-xs text-green-400 mt-1">5 pips</div>
+            </div>
+
+            <div class="control-group mb-4">
+                <label class="block text-xs text-gray-400 mb-1">Max Marker Decay (sec)</label>
+                <input type="range" id="decay-slider" min="2" max="20" step="1" value="5" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                <div id="decay-value" class="value-display text-xs text-green-400 mt-1">5 sec</div>
+            </div>
+
+            <div class="control-group mb-4">
+                <label class="block text-xs text-gray-400 mb-1">Distribution Levels</label>
+                <input type="range" id="levels-slider" min="10" max="50" step="5" value="20" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                <div id="levels-value" class="value-display text-xs text-green-400 mt-1">20 levels</div>
+            </div>
+
+            <div class="control-group mb-4">
+                <label class="block text-xs text-gray-400 mb-1">Tick Frequency Mode</label>
+                <select id="frequency-mode" class="w-full bg-gray-700 border border-gray-600 text-gray-100 p-1 text-xs rounded-md">
+                    <option value="normal">Normal (1-5/min)</option>
+                    <option value="active">Active (5-20/min)</option>
+                    <option value="volatile">Volatile (20-60/min)</option>
+                </select>
+            </div>
+
+            <div class="control-group mb-4">
+                <label class="block text-xs text-gray-400 mb-1">Flash Sensitivity</label>
+                <input type="range" id="flash-threshold" min="1" max="10" step="0.5" value="3" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+                <div id="flash-value" class="value-display text-xs text-green-400 mt-1">3.0 pips</div>
+            </div>
+
+            <div class="control-group flex gap-2">
+                <button onclick="toggleTicker()" id="toggle-ticker-btn" class="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-md transition-colors duration-200">
+                    Stop Ticker
+                </button>
+                <button onclick="resetAll()" class="flex-1 py-2 px-4 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-lg shadow-md transition-colors duration-200">
+                    Reset All
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('FX Ticker initializing...');
+
+        // ----- Constants -----
+        const PIPS_PER_UNIT = 10000; // For EUR/USD, 1 pip = 0.0001
+        const BAR_VISUAL_HEIGHT_PX = 300; // Fixed height for visual bars
+        const ADR_BAR_WIDTH_PX = 60;
+        const PULSE_BAR_WIDTH_PX = 10;
+        const TRAIL_BAR_WIDTH_PX = 150;
+
+        // ----- Configuration Variables -----
+        let settings = {
+            threshold: 1.0,          // Lowered threshold for tick pulse
+            adr: 100,                // Average Daily Range in pips
+            pulseScale: 5,           // Scale for tick pulse bar (pips)
+            maxDecay: 5000,          // Max marker decay time in ms
+            distributionLevels: 20,  // Number of levels for TPO distribution
+            frequencyMode: 'normal', // 'normal', 'active', 'volatile'
+            flashThreshold: 3.0      // Pips threshold for visual flash
+        };
+
+        // ----- Simulation State -----
+        let basePrice = 1.10000;
+        let currentPrice = basePrice;
+        let realCurrentPrice = basePrice; // Actual price, not rounded for display
+        let maxPositive = 0; // Max positive tick size (in price units)
+        let maxNegative = 0; // Max negative tick size (in price units)
+        let lastMaxUpdate = 0;
+        let tickCount = 0;
+        let tickTimes = []; // For calculating tick rate
+        let isRunning = false;
+        let nextTickTimer = null;
+
+        // Distribution tracking (TPO-like) - captures ALL ticks
+        let distributionData = new Map(); // Map<level: number, count: number>
+        let distributionDots = []; // Array of DOM elements for trail dots
+
+        // Flash management
+        let flashTimeout;
+        let sustainedDirection = 0; // 1 for up, -1 for down
+        let sustainedCount = 0;     // Number of consecutive ticks in sustainedDirection
+
+        // Realistic FX tick timing simulation
+        function getNextTickDelay() {
+            const baseDelays = {
+                'normal': [2000, 8000],   // 1-5 ticks/min
+                'active': [1000, 3000],   // 5-20 ticks/min
+                'volatile': [500, 1500]   // 20-60 ticks/min
+            };
+            
+            const [min, max] = baseDelays[settings.frequencyMode];
+            
+            // Add clustering - 30% chance of rapid sequence
+            if (Math.random() < 0.3) {
+                return Math.random() * 500 + 100; // 100-600ms for clusters
+            }
+            
+            // Normal distribution with occasional gaps
+            const delay = min + Math.random() * (max - min);
+            return Math.random() < 0.1 ? delay * 2 : delay; // 10% chance of longer gaps
+        }
+
+        // Generates a new simulated tick
+        function generateTick() {
+            if (!isRunning) return;
+            
+            console.log('Generating tick #', tickCount + 1);
+            
+            // Realistic tick sizes - mostly small with occasional larger moves
+            let tickSize; // In price units (e.g., 0.00001)
+            const rand = Math.random();
+            
+            if (rand < 0.7) {
+                // 70% small ticks (0.1-1.5 pips)
+                tickSize = (Math.random() - 0.5) * 0.00015;
+            } else if (rand < 0.9) {
+                // 20% medium ticks (1.5-3 pips)
+                tickSize = (Math.random() - 0.5) * 0.0003;
+            } else {
+                // 10% large ticks (3-8 pips)
+                tickSize = (Math.random() - 0.5) * 0.0008;
+            }
+            
+            // Add slight trending bias based on sustained movement
+            if (Math.random() < 0.55) {
+                tickSize = Math.abs(tickSize) * (sustainedDirection || (Math.random() > 0.5 ? 1 : -1));
+            }
+
+            realCurrentPrice += tickSize;
+            // Keep price within a reasonable range to prevent extreme values
+            realCurrentPrice = Math.max(1.05000, Math.min(1.15000, realCurrentPrice));
+            
+            const pips = tickSize * PIPS_PER_UNIT; // Convert tick size to pips
+            console.log('Tick size:', pips.toFixed(2), 'pips, New price:', realCurrentPrice.toFixed(5));
+            
+            // Update tick statistics
+            tickCount++;
+            const now = Date.now();
+            tickTimes.push(now);
+            // Keep only the last 60 tick times for rate calculation
+            if (tickTimes.length > 60) tickTimes.shift();
+            
+            // Update current price for display
+            currentPrice = realCurrentPrice;
+            // Calculate delta from base price for ADR calculation
+            const delta = currentPrice - basePrice;
+            
+            updateMaxMarkers(tickSize, now);
+            updateDisplays(delta, tickSize, pips);
+            
+            // Always add to distribution (captures ALL ticks, regardless of threshold)
+            addToDistribution(tickSize, pips);
+            
+            handleFlashing(pips);
+            
+            // Update sustained movement tracking
+            if ((sustainedDirection > 0 && pips > 0) || (sustainedDirection < 0 && pips < 0)) {
+                sustainedCount++;
+            } else {
+                sustainedDirection = pips > 0 ? 1 : -1;
+                sustainedCount = 1;
+            }
+            
+            updateStats();
+            scheduleNextTick();
+        }
+
+        // Updates the maximum positive and negative tick markers
+        function updateMaxMarkers(tickSize, now) {
+            if (tickSize > 0 && tickSize > maxPositive) {
+                maxPositive = tickSize;
+                lastMaxUpdate = now;
+            }
+            if (tickSize < 0 && tickSize < maxNegative) { // Compare negative values correctly
+                maxNegative = tickSize;
+                lastMaxUpdate = now;
+            }
+
+            // Decay max markers over time
+            if (now - lastMaxUpdate > settings.maxDecay) {
+                maxPositive *= 0.98; // Decay rate
+                maxNegative *= 0.98;
+                // Reset to zero if very small to avoid floating point inaccuracies
+                if (Math.abs(maxPositive) < 0.000001) maxPositive = 0;
+                if (Math.abs(maxNegative) < 0.000001) maxNegative = 0;
+            }
+        }
+
+        // Updates all visual display elements
+        function updateDisplays(delta, tickSize, pips) {
+            try {
+                // Update main price display
+                const mainPriceEl = document.getElementById('main-price');
+                const priceDisplayEl = document.getElementById('price-display');
+                
+                if (mainPriceEl) mainPriceEl.textContent = realCurrentPrice.toFixed(5);
+                if (priceDisplayEl) priceDisplayEl.textContent = realCurrentPrice.toFixed(5);
+
+                // Update ADR bar with discrete 5% steps
+                updateADRBar(delta);
+                
+                // Update pulse bar with threshold filter
+                updatePulseBar(tickSize, pips);
+
+                // Update component values
+                const adrPriceUnit = settings.adr / PIPS_PER_UNIT; // Convert ADR pips to price units
+                // Calculate percentage of ADR covered by current price delta
+                const adrRawPct = (delta / adrPriceUnit) * 100;
+                // Round to nearest 5% for discrete display
+                const adrDiscretePct = Math.round(adrRawPct / 5) * 5; 
+                
+                const adrValueEl = document.getElementById('adr-value');
+                const pulseValueEl = document.getElementById('pulse-value');
+                
+                if (adrValueEl) adrValueEl.textContent = adrDiscretePct + '%';
+                if (pulseValueEl) pulseValueEl.textContent = pips.toFixed(1) + ' pips';
+            } catch (e) {
+                console.error('Error updating displays:', e);
+            }
+        }
+
+        // Updates the ADR (Average Daily Range) bar
+        function updateADRBar(delta) {
+            const el = document.getElementById("adr-fill");
+            if (!el) return;
+            
+            const adrPriceUnit = settings.adr / PIPS_PER_UNIT; // ADR in price units
+            // Calculate raw percentage of ADR covered, clamped between -1 and 1
+            const rawPct = Math.max(Math.min(delta / adrPriceUnit, 1), -1);
+            
+            // For the bar fill, use the raw percentage for smooth movement
+            const fillHeightPx = Math.abs(rawPct) * (BAR_VISUAL_HEIGHT_PX / 2); // Scale to half bar height
+            const bottomPositionPx = rawPct >= 0 ? (BAR_VISUAL_HEIGHT_PX / 2) : (BAR_VISUAL_HEIGHT_PX / 2) + (rawPct * (BAR_VISUAL_HEIGHT_PX / 2));
+            
+            el.style.height = fillHeightPx + 'px';
+            el.style.bottom = bottomPositionPx + 'px'; // Adjust bottom based on direction
+            el.style.background = rawPct >= 0 ? '#3b82f6' : '#ef4444'; // Blue for positive, Red for negative
+            
+            // Update ADR step markers (e.g., 25%, 50%, 75% of ADR)
+            updateADRSteps();
+        }
+
+        // Creates and updates discrete ADR step markers
+        function updateADRSteps() {
+            const container = document.getElementById('adr-steps');
+            if (!container) return;
+            
+            container.innerHTML = ''; // Clear existing steps
+            
+            // Add 25% increment markers relative to the bar's height
+            for (let i = -100; i <= 100; i += 25) {
+                if (i === 0) continue; // Skip zero line as it's already there
+                
+                const step = document.createElement('div');
+                step.className = 'adr-step absolute left-0 text-gray-500 text-[7px]'; // Tailwind classes
+                step.textContent = i + '%';
+                
+                // Calculate position relative to the center of the bar
+                // 150px is half of BAR_VISUAL_HEIGHT_PX (300px)
+                const yPos = (BAR_VISUAL_HEIGHT_PX / 2) - ((i / 100) * (BAR_VISUAL_HEIGHT_PX / 2));
+                step.style.top = yPos + 'px';
+                step.style.transform = 'translateY(-50%)'; // Center text vertically
+                
+                container.appendChild(step);
+            }
+        }
+
+        // Updates the Tick Pulse bar
+        function updatePulseBar(tick, pips) {
+            const el = document.getElementById("pulse-fill");
+            if (!el) return;
+            
+            // Apply threshold filter - only show if above threshold
+            const absPips = Math.abs(pips);
+            if (absPips < settings.threshold) {
+                el.style.height = '0px';
+                return;
+            }
+            
+            // Scale tick size to the visual bar height based on pulseScale setting
+            const pulseScalePriceUnit = settings.pulseScale / PIPS_PER_UNIT;
+            const pct = Math.max(Math.min(tick / pulseScalePriceUnit, 1), -1); // Clamped percentage
+            const fillHeightPx = Math.abs(pct) * (BAR_VISUAL_HEIGHT_PX / 2);
+            const bottomPositionPx = pct >= 0 ? (BAR_VISUAL_HEIGHT_PX / 2) : (BAR_VISUAL_HEIGHT_PX / 2) + (pct * (BAR_VISUAL_HEIGHT_PX / 2));
+            
+            el.style.height = fillHeightPx + 'px';
+            el.style.bottom = bottomPositionPx + 'px';
+            el.style.background = pct >= 0 ? '#22c55e' : '#ef4444'; // Green for positive, Red for negative
+
+            // Update max markers display
+            updateMaxMarkersDisplay(pulseScalePriceUnit);
+        }
+
+        // Updates the position and visibility of max tick markers
+        function updateMaxMarkersDisplay(scale) {
+            const posEl = document.getElementById("max-pos");
+            const negEl = document.getElementById("max-neg");
+            
+            if (posEl && maxPositive > 0) {
+                const posPct = Math.min(maxPositive / scale, 1);
+                posEl.style.top = (BAR_VISUAL_HEIGHT_PX / 2) - (posPct * (BAR_VISUAL_HEIGHT_PX / 2)) + "px";
+                posEl.style.opacity = "0.7";
+            } else if (posEl) {
+                posEl.style.opacity = "0";
+            }
+
+            if (negEl && maxNegative < 0) {
+                const negPct = Math.max(maxNegative / scale, -1);
+                negEl.style.top = (BAR_VISUAL_HEIGHT_PX / 2) - (negPct * (BAR_VISUAL_HEIGHT_PX / 2)) + "px";
+                negEl.style.opacity = "0.7";
+            } else if (negEl) {
+                negEl.style.opacity = "0";
+            }
+        }
+
+        // Adds a tick to the distribution trail
+        function addToDistribution(tick, pips) {
+            const container = document.getElementById('trail-container');
+            if (!container) return;
+            
+            // Scale tick size to the distribution container height
+            const pulseScalePriceUnit = settings.pulseScale / PIPS_PER_UNIT;
+            const pct = Math.max(Math.min(tick / pulseScalePriceUnit, 1), -1);
+            // Map percentage to a discrete level
+            const level = Math.round(pct * settings.distributionLevels);
+            // Calculate vertical position based on level
+            const yPos = (BAR_VISUAL_HEIGHT_PX / 2) - ((level / settings.distributionLevels) * (BAR_VISUAL_HEIGHT_PX / 2));
+            
+            // Track distribution count for horizontal positioning
+            if (!distributionData.has(level)) {
+                distributionData.set(level, 0);
+            }
+            distributionData.set(level, distributionData.get(level) + 1);
+            
+            // Create dot element
+            const dot = document.createElement('div');
+            dot.className = 'trail-dot absolute w-1 h-1 rounded-full'; // Tailwind classes for dot size and shape
+            
+            // Position horizontally based on count at this level, clamped to container width
+            const count = distributionData.get(level);
+            const xPos = 10 + (count - 1) * 4; // Adjust 4 for spacing between dots
+            
+            dot.style.left = Math.min(xPos, TRAIL_BAR_WIDTH_PX - 10) + 'px'; // Clamp to container width
+            dot.style.top = yPos + 'px';
+            
+            // Color based on tick direction/magnitude
+            if (Math.abs(pips) < 0.5) {
+                dot.classList.add('bg-gray-500'); // Neutral
+            } else if (pips > 0) {
+                dot.classList.add('bg-green-500'); // Positive
+            } else {
+                dot.classList.add('bg-red-500'); // Negative
+            }
+            
+            container.appendChild(dot);
+            distributionDots.push(dot);
+            
+            // Limit total dots to prevent performance issues and clear visual clutter
+            if (distributionDots.length > 200) {
+                const oldDot = distributionDots.shift();
+                if (oldDot && oldDot.parentNode) {
+                    oldDot.parentNode.removeChild(oldDot);
+                }
+            }
+            
+            updateDistributionStats();
+        }
+
+        // Updates statistics related to tick distribution
+        function updateDistributionStats() {
+            const levels = distributionData.size;
+            const maxCount = distributionData.size > 0 ? Math.max(...distributionData.values()) : 0;
+            const statsEl = document.getElementById('distribution-stats');
+            if (statsEl) {
+                statsEl.textContent = `Levels: ${levels} | Max: ${maxCount}`;
+            }
+        }
+
+        // Handles visual flashing for significant price movements
+        function handleFlashing(pips) {
+            clearTimeout(flashTimeout);
+            
+            let flashClass = '';
+            if (Math.abs(pips) > settings.flashThreshold) {
+                flashClass = pips > 0 ? 'flash-up' : 'flash-down';
+            }
+            
+            if (flashClass) {
+                const pulseFlash = document.getElementById('pulse-flash');
+                if (pulseFlash) {
+                    pulseFlash.className = 'flash-overlay ' + flashClass + ' rounded-md';
+                    pulseFlash.style.opacity = '1';
+                }
+                
+                // Flash ADR bar for even larger movements
+                if (Math.abs(pips) > settings.flashThreshold * 1.5) {
+                    const adrFlash = document.getElementById('adr-flash');
+                    if (adrFlash) {
+                        adrFlash.className = 'flash-overlay ' + flashClass + ' rounded-md';
+                        adrFlash.style.opacity = '1';
+                    }
+                }
+                
+                // Fade out flash after a short delay
+                flashTimeout = setTimeout(() => {
+                    document.querySelectorAll('.flash-overlay').forEach(el => {
+                        el.style.opacity = '0';
+                    });
+                }, 150);
+            }
+        }
+
+        // Updates overall tick rate statistics
+        function updateStats() {
+            const ticksPerMin = tickTimes.length > 1 ? 
+                Math.round((tickTimes.length - 1) / ((Date.now() - tickTimes[0]) / 60000)) : 0;
+            const statsEl = document.getElementById('tick-stats');
+            if (statsEl) {
+                statsEl.textContent = `Ticks: ${tickCount} | Rate: ${ticksPerMin}/min`;
+            }
+        }
+
+        // Schedules the next tick generation
+        function scheduleNextTick() {
+            if (!isRunning) return;
+            
+            const delay = getNextTickDelay();
+            nextTickTimer = setTimeout(generateTick, delay);
+        }
+
+        // Starts the ticker simulation
+        function startTicker() {
+            console.log('Starting ticker...');
+            isRunning = true;
+            document.getElementById('toggle-ticker-btn').textContent = 'Stop Ticker';
+            document.getElementById('toggle-ticker-btn').classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            document.getElementById('toggle-ticker-btn').classList.add('bg-red-600', 'hover:bg-red-700');
+            document.getElementById('status-indicator').classList.add('bg-green-500');
+            document.getElementById('status-indicator').classList.remove('bg-red-500');
+            scheduleNextTick();
+        }
+
+        // Stops the ticker simulation
+        function stopTicker() {
+            console.log('Stopping ticker...');
+            isRunning = false;
+            document.getElementById('toggle-ticker-btn').textContent = 'Start Ticker';
+            document.getElementById('toggle-ticker-btn').classList.remove('bg-red-600', 'hover:bg-red-700');
+            document.getElementById('toggle-ticker-btn').classList.add('bg-blue-600', 'hover:bg-blue-700');
+            document.getElementById('status-indicator').classList.remove('bg-green-500');
+            document.getElementById('status-indicator').classList.add('bg-red-500');
+            if (nextTickTimer) {
+                clearTimeout(nextTickTimer);
+                nextTickTimer = null;
+            }
+        }
+
+        // Toggles the ticker state
+        function toggleTicker() {
+            if (isRunning) {
+                stopTicker();
+            } else {
+                startTicker();
+            }
+        }
+
+        // ----- Control Event Handlers -----
+        function setupControls() {
+            const elements = {
+                threshold: document.getElementById('threshold-slider'),
+                adr: document.getElementById('adr-slider'),
+                pulseScale: document.getElementById('pulse-scale-slider'),
+                decay: document.getElementById('decay-slider'),
+                levels: document.getElementById('levels-slider'),
+                frequency: document.getElementById('frequency-mode'),
+                flash: document.getElementById('flash-threshold')
+            };
+
+            if (elements.threshold) {
+                elements.threshold.addEventListener('input', (e) => {
+                    settings.threshold = parseFloat(e.target.value);
+                    const display = document.getElementById('threshold-value');
+                    if (display) display.textContent = settings.threshold.toFixed(1) + ' pips';
+                });
+            }
+
+            if (elements.adr) {
+                elements.adr.addEventListener('input', (e) => {
+                    settings.adr = parseInt(e.target.value);
+                    const display = document.getElementById('adr-display');
+                    if (display) display.textContent = settings.adr + ' pips';
+                    updateADRSteps(); // Update ADR steps when ADR range changes
+                });
+            }
+
+            if (elements.pulseScale) {
+                elements.pulseScale.addEventListener('input', (e) => {
+                    settings.pulseScale = parseInt(e.target.value);
+                    const display = document.getElementById('pulse-scale-value');
+                    if (display) display.textContent = settings.pulseScale + ' pips';
+                });
+            }
+
+            if (elements.decay) {
+                elements.decay.addEventListener('input', (e) => {
+                    settings.maxDecay = parseInt(e.target.value) * 1000;
+                    const display = document.getElementById('decay-value');
+                    if (display) display.textContent = parseInt(e.target.value) + ' sec';
+                });
+            }
+
+            if (elements.levels) {
+                elements.levels.addEventListener('input', (e) => {
+                    settings.distributionLevels = parseInt(e.target.value);
+                    const display = document.getElementById('levels-value');
+                    if (display) display.textContent = settings.distributionLevels + ' levels';
+                    // Re-draw distribution if levels change significantly, or clear and rebuild
+                    // For simplicity here, we'll just update the setting.
+                });
+            }
+
+            if (elements.frequency) {
+                elements.frequency.addEventListener('change', (e) => {
+                    settings.frequencyMode = e.target.value;
+                });
+            }
+
+            if (elements.flash) {
+                elements.flash.addEventListener('input', (e) => {
+                    settings.flashThreshold = parseFloat(e.target.value);
+                    const display = document.getElementById('flash-value');
+                    if (display) display.textContent = settings.flashThreshold.toFixed(1) + ' pips';
+                });
+            }
+        }
+
+        // Resets all settings and simulation state to initial values
+        function resetAll() {
+            console.log('Resetting all...');
+            
+            const wasRunning = isRunning;
+            stopTicker(); // Stop ticker temporarily
+            
+            // Reset settings to defaults
+            settings = {
+                threshold: 1.0,
+                adr: 100,
+                pulseScale: 5,
+                maxDecay: 5000,
+                distributionLevels: 20,
+                frequencyMode: 'normal',
+                flashThreshold: 3.0
+            };
+            
+            // Reset control sliders/selects to their default values
+            const controlMappings = [
+                ['threshold-slider', 1.0],
+                ['adr-slider', 100],
+                ['pulse-scale-slider', 5],
+                ['decay-slider', 5],
+                ['levels-slider', 20],
+                ['frequency-mode', 'normal'],
+                ['flash-threshold', 3.0]
+            ];
+            
+            controlMappings.forEach(([id, value]) => {
+                const el = document.getElementById(id);
+                if (el) el.value = value;
+            });
+            
+            // Update display values for controls
+            const displayMappings = [
+                ['threshold-value', '1.0 pips'],
+                ['adr-display', '100 pips'],
+                ['pulse-scale-value', '5 pips'],
+                ['decay-value', '5 sec'],
+                ['levels-value', '20 levels'],
+                ['flash-value', '3.0 pips']
+            ];
+            
+            displayMappings.forEach(([id, text]) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = text;
+            });
+            
+            // Clear distribution data and remove dots from DOM
+            distributionData.clear();
+            distributionDots.forEach(dot => {
+                if (dot && dot.parentNode) dot.parentNode.removeChild(dot);
+            });
+            distributionDots = [];
+            
+            // Reset simulation state variables
+            basePrice = 1.10000;
+            currentPrice = basePrice;
+            realCurrentPrice = basePrice;
+            maxPositive = 0;
+            maxNegative = 0;
+            tickCount = 0;
+            tickTimes = [];
+            sustainedDirection = 0;
+            sustainedCount = 0;
+            
+            // Update initial displays and stats
+            updateDisplays(0, 0, 0);
+            updateStats();
+            updateDistributionStats(); // Reset distribution stats display
+            updateADRSteps(); // Re-render ADR steps
+
+            // Restart ticker if it was running before reset
+            if (wasRunning) {
+                setTimeout(startTicker, 100); // Small delay before restarting
+            }
+        }
+
+        // ----- Initialization -----
+        function init() {
+            console.log('Initializing FX Ticker...');
+            
+            try {
+                setupControls();
+                
+                // Initial display updates
+                updateDisplays(0, 0, 0);
+                updateStats();
+                updateDistributionStats();
+                updateADRSteps(); // Initial render of ADR steps
+                
+                // Start the ticker automatically on load
+                startTicker();
+                
+                console.log('FX Ticker initialized successfully');
+            } catch (e) {
+                console.error('Error initializing FX Ticker:', e);
+            }
+        }
+
+        // Start when page loads
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    </script>
+</body>
+</html>

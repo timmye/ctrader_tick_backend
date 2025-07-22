@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FX Ticker Visual</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .container {
+      position: relative;
+      width: 150px;
+      height: 500px;
+      background: #222;
+      border: 1px solid #555;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #adrBar {
+      position: absolute;
+      width: 20px;
+      height: 100%;
+      background: #333;
+      left: 10px;
+      top: 0;
+    }
+
+    #priceLevel {
+      position: absolute;
+      width: 20px;
+      height: 2px;
+      background: #0ff;
+      left: 10px;
+      z-index: 5;
+    }
+
+    #zeroMarker {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 1px;
+      background-color: #999;
+      z-index: 1;
+    }
+
+    #tickPulseContainer {
+      position: absolute;
+      left: 55px;
+      top: 0;
+      height: 100%;
+      width: 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    #tickPulseUp,
+    #tickPulseDown {
+      width: 0px;
+      height: 50%;
+      background-color: #0f0;
+      opacity: 0;
+      transition: all 0.25s ease-out;
+    }
+
+    #tickPulseDown {
+      background-color: #f00;
+      align-self: flex-end;
+    }
+
+    #priceLabel {
+      position: absolute;
+      right: 5px;
+      top: 5px;
+      font-size: 16px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="adrBar"></div>
+    <div id="priceLevel"></div>
+    <div id="zeroMarker"></div>
+    <div id="tickPulseContainer">
+      <div id="tickPulseUp"></div>
+      <div id="tickPulseDown"></div>
+    </div>
+    <div id="priceLabel">Price</div>
+  </div>
+
+  <script>
+    const basePrice = 1.1000;
+    const ADR = 0.0100; // 100 pips = full range
+    const pip = 0.0001;
+
+    let price = basePrice;
+
+    function updatePriceBar(currentPrice) {
+      const container = document.querySelector(".container");
+      const bar = document.getElementById("priceLevel");
+      const label = document.getElementById("priceLabel");
+      const height = container.clientHeight;
+      const priceOffset = (currentPrice - basePrice) / ADR;
+      const y = height / 2 - priceOffset * height;
+      bar.style.top = `${y}px`;
+      label.textContent = currentPrice.toFixed(5);
+    }
+
+	function triggerPulse(changeSize, direction) {
+	  const up = document.getElementById("tickPulseUp");
+	  const down = document.getElementById("tickPulseDown");
+
+	  // Use a perceptual/logarithmic scale
+	  const scaleFactor = 20; // base size multiplier
+	  const magnitude = Math.max(1, Math.log10((changeSize / pip) + 1)); // avoid log(0)
+	  const width = Math.min(100, magnitude * scaleFactor);
+
+	  if (direction > 0) {
+		up.style.width = `${width}px`;
+		up.style.opacity = 1;
+		down.style.opacity = 0;
+	  } else {
+		down.style.width = `${width}px`;
+		down.style.opacity = 1;
+		up.style.opacity = 0;
+	  }
+
+	  setTimeout(() => {
+		up.style.opacity = 0;
+		down.style.opacity = 0;
+	  }, 300);
+	}
+
+
+    function simulateTick() {
+      const change = (Math.random() - 0.5) * 0.0005; // ±2.5 pips
+      const oldPrice = price;
+      price += change;
+
+      // Clamp to ADR range
+      price = Math.max(basePrice - ADR / 2, Math.min(basePrice + ADR / 2, price));
+      updatePriceBar(price);
+      triggerPulse(Math.abs(price - oldPrice), change);
+    }
+
+    setInterval(simulateTick, 200 + Math.random() * 500); // random cadence ~1/sec or faster
+  </script>
+</body>
+</html>

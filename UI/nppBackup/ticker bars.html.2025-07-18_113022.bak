@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FX Tick Visualizer</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: sans-serif;
+      display: flex;
+      gap: 40px;
+      padding: 30px;
+    }
+
+    .meterContainer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* === Tick Pulse Bar === */
+    #tickPulseBox {
+      position: relative;
+      width: 20px;
+      height: 120px;
+      background: #222;
+      border: 1px solid #444;
+    }
+
+    #tickPulseUp,
+    #tickPulseDown {
+      width: 100%;
+      position: absolute;
+      left: 0;
+      bottom: 50%;
+      opacity: 0;
+      transition: height 0.15s, opacity 0.3s;
+    }
+
+    #tickPulseUp {
+      background: lime;
+      transform-origin: bottom;
+    }
+
+    #tickPulseDown {
+      background: red;
+      transform-origin: top;
+    }
+
+    /* Zero Line */
+    .zeroLine {
+      position: absolute;
+      bottom: 50%;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: #888;
+    }
+
+    /* === Tick History Trail === */
+    #tickHistory {
+      position: relative;
+      width: 220px;
+      height: 120px;
+      border: 1px solid #444;
+      background: #181818;
+      overflow: hidden;
+    }
+
+    .tickDot {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: yellow;
+    }
+
+    /* === Info === */
+    .readout {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="meterContainer">
+    <div id="tickPulseBox">
+      <div id="tickPulseUp"></div>
+      <div id="tickPulseDown"></div>
+      <div class="zeroLine"></div>
+    </div>
+    <div class="readout" id="priceReadout">Mid: 1.00000</div>
+  </div>
+
+  <div class="meterContainer">
+    <div id="tickHistory"></div>
+    <div class="readout">Tick Trail</div>
+  </div>
+
+  <script>
+    let mid = 1.00000;
+    const pip = 0.0001;
+    const minPulseThreshold = 5 * pip;
+
+    const pulseUp = document.getElementById("tickPulseUp");
+    const pulseDown = document.getElementById("tickPulseDown");
+    const tickHistory = document.getElementById("tickHistory");
+    const priceReadout = document.getElementById("priceReadout");
+
+    const historyMaxPoints = 40;
+    let tickPoints = [];
+
+    // Simulate ticks every 200–1000ms with random pip changes
+    function simulateTick() {
+      const maxPips = 15;
+      const changeInPips = (Math.floor(Math.random() * maxPips * 2) - maxPips);
+      const change = changeInPips * pip;
+      const direction = change >= 0 ? 1 : -1;
+
+      mid += change;
+      mid = Math.round(mid * 100000) / 100000;
+      priceReadout.textContent = `Mid: ${mid.toFixed(5)}`;
+
+      triggerPulse(change, direction);
+      addTickHistory(change);
+
+      setTimeout(simulateTick, Math.random() * 800 + 200);
+    }
+
+    function triggerPulse(changeSize, direction) {
+      if (Math.abs(changeSize) < minPulseThreshold) return;
+
+      const magnitude = Math.max(1, Math.log10((Math.abs(changeSize) / pip) + 1));
+      const height = Math.min(60, magnitude * 12); // max 60px
+
+      if (direction > 0) {
+        pulseUp.style.height = `${height}px`;
+        pulseUp.style.opacity = 1;
+        pulseDown.style.opacity = 0;
+      } else {
+        pulseDown.style.height = `${height}px`;
+        pulseDown.style.opacity = 1;
+        pulseUp.style.opacity = 0;
+      }
+
+      setTimeout(() => {
+        pulseUp.style.opacity = 0;
+        pulseDown.style.opacity = 0;
+      }, 300);
+    }
+
+    function addTickHistory(changeSize) {
+      const containerHeight = 120;
+      const maxPipMove = 20 * pip;
+      const normalized = Math.min(1, Math.abs(changeSize) / maxPipMove);
+      const y = normalized * containerHeight;
+
+      tickPoints.push({ y, dir: Math.sign(changeSize) });
+      if (tickPoints.length > historyMaxPoints) tickPoints.shift();
+      renderTickHistory();
+    }
+
+    function renderTickHistory() {
+      tickHistory.innerHTML = "";
+      tickPoints.forEach((point, i) => {
+        const dot = document.createElement("div");
+        dot.className = "tickDot";
+        dot.style.left = `${i * 5}px`;
+        dot.style.bottom = `${point.dir > 0 ? 60 + point.y : 60 - point.y}px`;
+        tickHistory.appendChild(dot);
+      });
+    }
+
+    simulateTick();
+  </script>
+
+</body>
+</html>

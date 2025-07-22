@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FX Ticker Display - ADR + Tick Pulse</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: monospace;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      height: 100vh;
+      padding: 2rem;
+    }
+
+    .ticker-container {
+      display: flex;
+      gap: 40px;
+      align-items: flex-end;
+    }
+
+    .bar-container {
+      position: relative;
+      width: 60px;
+      height: 300px;
+      background: #222;
+      border: 1px solid #444;
+    }
+
+    .bar-fill {
+      position: absolute;
+      width: 100%;
+      background: #08f;
+      bottom: 50%;
+      transform-origin: center bottom;
+    }
+
+    .pulse-fill {
+      position: absolute;
+      width: 100%;
+      bottom: 50%;
+      background: #0f0;
+      transform-origin: center bottom;
+    }
+
+    .max-marker {
+      position: absolute;
+      width: 100%;
+      height: 2px;
+      background: #f80;
+      left: 0;
+    }
+
+    .zero-line {
+      position: absolute;
+      width: 100%;
+      height: 1px;
+      background: #999;
+      top: 50%;
+    }
+
+    canvas {
+      background: #111;
+      border: 1px solid #444;
+    }
+  </style>
+</head>
+<body>
+  <div class="ticker-container">
+    <!-- ADR Price Bar -->
+    <div class="bar-container" id="adr-bar">
+      <div class="bar-fill" id="adr-fill" style="height: 0;"></div>
+      <div class="zero-line"></div>
+    </div>
+
+    <!-- Tick Pulse -->
+    <div class="bar-container" id="pulse-bar">
+      <div class="pulse-fill" id="pulse-fill" style="height: 0;"></div>
+      <div class="max-marker" id="max-pos" style="top: 50%;"></div>
+      <div class="max-marker" id="max-neg" style="top: 50%;"></div>
+      <div class="zero-line"></div>
+    </div>
+
+    <!-- Tick Trail -->
+    <canvas id="trail-canvas" width="200" height="300"></canvas>
+  </div>
+
+  <script>
+    // ----- Simulated Tick Engine -----
+    let basePrice = 1.10000;
+    let currentPrice = basePrice;
+    let adr = 0.0100; // 100 pips
+    let tickHistory = [];
+    const trailLength = 50;
+    let maxPositive = 0;
+    let maxNegative = 0;
+
+    function generateTick() {
+      const tick = (Math.random() - 0.5) * 0.0005; // ±2.5 pips
+      currentPrice += tick;
+      const delta = currentPrice - basePrice;
+      const tickSize = tick;
+
+      // update history and extremes
+      tickHistory.push(tickSize);
+      if (tickHistory.length > trailLength) tickHistory.shift();
+      if (tickSize > maxPositive) maxPositive = tickSize;
+      if (tickSize < maxNegative) maxNegative = tickSize;
+
+      updateADRBar(delta);
+      updatePulseBar(tickSize);
+      drawTickTrail();
+    }
+
+    // ----- ADR Fill -----
+    function updateADRBar(delta) {
+      const el = document.getElementById("adr-fill");
+      const pct = Math.max(Math.min(delta / adr, 1), -1); // clamp
+      const px = pct * 150;
+      el.style.height = Math.abs(px) + 'px';
+      el.style.bottom = px >= 0 ? '50%' : (150 + px) + 'px';
+    }
+
+    // ----- Tick Pulse -----
+    function updatePulseBar(tick) {
+      const el = document.getElementById("pulse-fill");
+      const pulseScale = 0.0010; // 10 pip window
+      const pct = Math.max(Math.min(tick / pulseScale, 1), -1);
+      const px = pct * 150;
+      el.style.height = Math.abs(px) + 'px';
+      el.style.bottom = px >= 0 ? '50%' : (150 + px) + 'px';
+
+      // max markers
+      const posPct = Math.min(maxPositive / pulseScale, 1);
+      const negPct = Math.max(maxNegative / pulseScale, -1);
+      document.getElementById("max-pos").style.top = (150 - posPct * 150) + "px";
+      document.getElementById("max-neg").style.top = (150 - negPct * 150) + "px";
+    }
+
+    // ----- Tick Trail Line -----
+    function drawTickTrail() {
+      const canvas = document.getElementById("trail-canvas");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.moveTo(0, 150);
+      for (let i = 0; i < tickHistory.length; i++) {
+        const y = 150 - (tickHistory[i] / 0.0010) * 150;
+        ctx.lineTo((i / trailLength) * canvas.width, y);
+      }
+      ctx.strokeStyle = "#0f0";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Simulate price ticks
+    setInterval(generateTick, 300 + Math.random() * 500); // 2–3 ticks/sec
+  </script>
+</body>
+</html>

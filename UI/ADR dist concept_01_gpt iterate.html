@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ADR Dist Quad</title>
+  <style>
+    body {
+      background: #111;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 16px;
+      font-family: sans-serif;
+    }
+    .viz {
+      position: relative;
+      width: 120px;
+      height: 220px;
+      background: #222;
+      border: 1px solid #333;
+      overflow: hidden;
+    }
+    .viz.horizontal {
+      width: 220px;
+      height: 120px;
+    }
+    .pulse {
+      position: absolute;
+      background: linear-gradient(to right, #60a5fa, #2563eb);
+      height: 3px;
+      width: 0;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      transition: width 0.2s ease;
+    }
+    .dot {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      background: #93c5fd;
+      border-radius: 50%;
+      opacity: 0.7;
+      transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Four meter containers -->
+  <div class="viz" id="vert-dual"></div>
+  <div class="viz" id="vert-single"></div>
+  <div class="viz horizontal" id="horiz-dual"></div>
+  <div class="viz horizontal" id="horiz-single"></div>
+
+  <script>
+    class ADRMeter {
+      constructor(containerId, axis = 'vertical', singleSided = false) {
+        this.container = document.getElementById(containerId);
+        this.axis = axis;
+        this.singleSided = singleSided;
+        this.mid = 1.2500;
+        this.price = 1.2500;
+        this.range = 0.0100;
+      }
+
+      renderTick(tick) {
+        const pulse = document.createElement('div');
+        pulse.className = 'pulse';
+
+        const dir = tick.direction;
+        const mag = Math.min(tick.magnitude, 5);
+
+        if (this.axis === 'vertical') {
+          pulse.style.width = `${mag * 15}px`;
+          pulse.style.left = this.singleSided || dir > 0 ? '50%' : 'auto';
+          pulse.style.right = this.singleSided || dir < 0 ? '50%' : 'auto';
+        } else {
+          pulse.style.height = `${mag * 15}px`;
+          pulse.style.width = '3px';
+          pulse.style.top = this.singleSided || dir > 0 ? '50%' : 'auto';
+          pulse.style.bottom = this.singleSided || dir < 0 ? '50%' : 'auto';
+        }
+
+        this.container.appendChild(pulse);
+        setTimeout(() => pulse.remove(), 300);
+
+        // Dot trail
+        const dot = document.createElement('div');
+        dot.className = 'dot';
+
+        const pct = (this.price - (this.mid - this.range / 2)) / this.range;
+
+        if (this.axis === 'vertical') {
+          dot.style.top = `${(1 - pct) * 100}%`;
+          dot.style.left = `${50 + dir * 10}%`;
+        } else {
+          dot.style.left = `${pct * 100}%`;
+          dot.style.top = `${50 + dir * 10}%`;
+        }
+
+        this.container.appendChild(dot);
+        setTimeout(() => dot.remove(), 3000);
+      }
+
+      updatePrice(tick) {
+        this.price = tick.price;
+      }
+    }
+
+    // Create four meters
+    const meters = [
+      new ADRMeter('vert-dual', 'vertical', false),
+      new ADRMeter('vert-single', 'vertical', true),
+      new ADRMeter('horiz-dual', 'horizontal', false),
+      new ADRMeter('horiz-single', 'horizontal', true),
+    ];
+
+    let currentPrice = 1.2500;
+
+    function simulateTick() {
+      const direction = Math.random() > 0.5 ? 1 : -1;
+      const magnitude = Math.random() * 3;
+      const price = currentPrice + direction * magnitude / 10000;
+      currentPrice = price;
+
+      const tick = { direction, magnitude, price };
+
+      for (const meter of meters) {
+        meter.updatePrice(tick);
+        meter.renderTick(tick);
+      }
+    }
+
+    setInterval(simulateTick, 600);
+  </script>
+</body>
+</html>

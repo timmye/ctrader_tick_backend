@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>ADR Micro Price Strip</title>
+<style>
+  body {
+    font-family: 'Roboto Mono', monospace;
+    background: #0f1114;
+    display: flex;
+    height: 100vh;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .adr-strip {
+    color: #dde;
+    width: 220px;
+    height: 160px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+  }
+
+  /* Big Figs – smallest/least prominent */
+  .big-fig {
+    font-size: 14px;
+    letter-spacing: 1px;
+    height: 14px;
+  }
+
+  /* Pips – largest & central */
+  .pips {
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+    margin: -4px 0;  /* tighten closer to big/tick to abolish gaps */
+  }
+
+  /* Fractional pip – literally ½ height */
+  .frac-pip {
+    font-size: 16px;
+    opacity: .75;
+  }
+</style>
+</head>
+<body>
+  <div class="adr-strip">
+    <div class="big-fig" id="bigFig">1.1</div>
+    <div class="pips"     id="pips">1234</div>
+    <div class="frac-pip" id="frac">5</div>
+  </div>
+
+<script>
+/* 1. CONFIG  (mirrors the ‘ADR daily range’)
+   ADR = 55 pips   → we recalculate day-high/low offset accordingly      */
+const ADR = 55 * 1e-4;          // 0.0055 in price terms
+let mid   = 1.12500;
+
+/* keep day-extremes TiVo friendly */
+let high = mid + ADR/2;
+let low  = mid - ADR/2;
+
+/* 2. Simulated price stream */
+let price = 1.12345;
+tickLoop();
+
+function tickLoop() {
+  const tick = (Math.random()-0.5) * 0.00018;           // ±1.8 pip max
+  price += tick;
+  /* ensure price stays inside today’s ADR band for demo purposes */
+  if (price > high) { high = price; low = price - ADR; }
+  if (price < low)  { low  = price; high= price + ADR; }
+
+  updateStrip(price);
+  setTimeout(tickLoop, 800 + Math.random()*1200);       // jittered arrival
+}
+
+/* 3. Rendering function – never uses any decimal separators itself */
+function updateStrip(p) {
+  const whole   = p.toFixed(5);
+  // Split precisely: 1 . 1 1234 5
+  const big  = whole.substr(0, whole.indexOf('.')+2);  // "1.1"
+  const pps  = whole.substr(whole.indexOf('.')+2, 4);   // "1234"
+  const frac = whole.substr(-1);                        // "5"
+
+  document.getElementById('bigFig').textContent = big;
+  document.getElementById('pips').textContent   = pps;
+  document.getElementById('frac').textContent   = frac;
+}
+</script>
+</body>
+</html>

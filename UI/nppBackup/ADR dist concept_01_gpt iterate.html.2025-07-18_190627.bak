@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Adaptive FX Flow Meter Testbed</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: #111827;
+      font-family: sans-serif;
+      display: flex;
+      flex-wrap: wrap;
+      color: #d1d5db;
+      height: 100vh;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+    }
+    .viz-wrapper {
+      width: 140px;
+      height: 220px;
+      margin: 8px;
+      border: 1px solid #374151;
+      position: relative;
+      background: #1f2937;
+    }
+    .visualization-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    .tick-pulse {
+      position: absolute;
+      background: linear-gradient(to right, transparent, #60a5fa, #3b82f6);
+      height: 3px;
+      width: 0;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      transition: width 0.1s ease;
+    }
+    .pulse-dot {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      border-radius: 50%;
+      background-color: #60a5fa;
+      transform: translate(-50%, -50%);
+    }
+    .horizontal {
+      transform: rotate(90deg);
+      transform-origin: center;
+    }
+    .float-price {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 100;
+      background: transparent;
+      cursor: move;
+      user-select: none;
+    }
+    .price-big {
+      font-size: 14px;
+      opacity: 0.6;
+    }
+    .price-pip {
+      font-size: 36px;
+      font-weight: bold;
+      color: #60a5fa;
+    }
+    .price-fractional {
+      font-size: 12px;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- FLOATING PRICE DISPLAY -->
+  <div class="float-price" id="floatingPrice">
+    <span class="price-big" id="bigFigures">1.25</span>
+    <span class="price-pip" id="pips">50</span>
+    <span class="price-fractional" id="fractional">3</span>
+  </div>
+
+  <!-- 4 METERS -->
+  <div class="viz-wrapper" id="verticalDual"><div class="visualization-container"></div></div>
+  <div class="viz-wrapper" id="verticalSingle"><div class="visualization-container"></div></div>
+  <div class="viz-wrapper" id="horizontalDual"><div class="visualization-container horizontal"></div></div>
+  <div class="viz-wrapper" id="horizontalSingle"><div class="visualization-container horizontal"></div></div>
+  <script>
+const meters = {
+  verticalDual: { element: document.querySelector('#verticalDual .visualization-container'), dual: true, axis: 'v' },
+  verticalSingle: { element: document.querySelector('#verticalSingle .visualization-container'), dual: false, axis: 'v' },
+  horizontalDual: { element: document.querySelector('#horizontalDual .visualization-container'), dual: true, axis: 'h' },
+  horizontalSingle: { element: document.querySelector('#horizontalSingle .visualization-container'), dual: false, axis: 'h' }
+};
+
+let midPrice = 1.2550;
+let currentPrice = 1.2550;
+
+function updateFloatingPrice(price) {
+  const str = price.toFixed(3);
+  const [main, frac] = str.split('.');
+  document.getElementById('bigFigures').textContent = main.slice(0, -1);
+  document.getElementById('pips').textContent = main.slice(-1) + frac[0];
+  document.getElementById('fractional').textContent = frac[1] ?? '0';
+}
+
+function emitPulse(target, magnitude, direction, axis, dual) {
+  const pulse = document.createElement('div');
+  pulse.className = 'tick-pulse';
+  if (axis === 'h') {
+    pulse.style.height = `${Math.min(magnitude * 4, 80)}px`;
+    pulse.style.width = '3px';
+    pulse.style.top = direction > 0 || dual ? '0%' : '100%';
+    pulse.style.background = direction > 0
+      ? 'linear-gradient(to bottom, transparent, #60a5fa, #3b82f6)'
+      : 'linear-gradient(to top, transparent, #f87171, #ef4444)';
+  } else {
+    pulse.style.width = `${Math.min(magnitude * 4, 80)}px`;
+    pulse.style.height = '3px';
+    pulse.style.left = direction > 0 || dual ? '0%' : '100%';
+    pulse.style.background = direction > 0
+      ? 'linear-gradient(to right, transparent, #60a5fa, #3b82f6)'
+      : 'linear-gradient(to left, transparent, #f87171, #ef4444)';
+  }
+  target.appendChild(pulse);
+  setTimeout(() => pulse.remove(), 300);
+}
+
+function simulateTick() {
+  const direction = Math.random() > 0.5 ? 1 : -1;
+  const magnitude = Math.random() * 3;
+  currentPrice += direction * (magnitude / 10000);
+  updateFloatingPrice(currentPrice);
+
+  Object.values(meters).forEach(({ element, axis, dual }) => {
+    emitPulse(element, magnitude, direction, axis, dual);
+    const dot = document.createElement('div');
+    dot.className = 'pulse-dot';
+    const pct = ((currentPrice - (midPrice - 0.005)) / 0.01);
+    if (axis === 'v') {
+      dot.style.top = `${(1 - pct) * 100}%`;
+      dot.style.left = `${dual ? 50 + direction * 20 : 50}%`;
+    } else {
+      dot.style.left = `${pct * 100}%`;
+      dot.style.top = `${dual ? 50 + direction * 20 : 50}%`;
+    }
+    element.appendChild(dot);
+    setTimeout(() => dot.remove(), 4000);
+  });
+}
+
+setInterval(simulateTick, 500);
+
+// Drag logic for floating price
+const floating = document.getElementById('floatingPrice');
+let dragging = false, offsetX = 0, offsetY = 0;
+floating.addEventListener('mousedown', (e) => {
+  dragging = true;
+  offsetX = e.offsetX;
+  offsetY = e.offsetY;
+});
+document.addEventListener('mousemove', (e) => {
+  if (dragging) {
+    floating.style.left = `${e.pageX - offsetX}px`;
+    floating.style.top = `${e.pageY - offsetY}px`;
+  }
+});
+document.addEventListener('mouseup', () => dragging = false);
+</script>
+
+</body>
+</html>
+

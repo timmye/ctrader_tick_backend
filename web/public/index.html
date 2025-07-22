@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Price Ticker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Live Price Ticker</h1>
+            <div class="status">
+                <span id="connection-status" class="status-indicator">Connecting...</span>
+                <span id="client-count" class="client-count">0 clients</span>
+            </div>
+        </header>
+
+        <div class="controls">
+            <div class="symbol-selector">
+                <label for="symbol-input">Add Symbol:</label>
+                <input type="text" id="symbol-input" placeholder="Enter symbol (e.g., EURUSD)" maxlength="10">
+                <button id="add-symbol-btn">Add</button>
+            </div>
+            <div class="selected-symbols">
+                <h3>Selected Symbols (<span id="symbol-count">0</span>/24)</h3>
+                <div id="symbol-tags" class="symbol-tags"></div>
+            </div>
+        </div>
+
+        <div class="price-grid" id="price-grid">
+            <div class="empty-state">
+                <h3>No symbols selected</h3>
+                <p>Add symbols above to start receiving live price updates</p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>WebSocket Status: <span id="ws-status">Disconnected</span></p>
+            <p>Last Update: <span id="last-update">Never</span></p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

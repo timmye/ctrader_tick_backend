@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Adaptive FX Flow Meter – 4 Meters</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: #111827;
+      font-family: 'Inter', sans-serif;
+      color: #d1d5db;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .viz-grid {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding: 16px;
+      flex-grow: 1;
+      align-items: center;
+      justify-content: center;
+    }
+    .viz-wrapper {
+      width: 120px;
+      height: 220px;
+      position: relative;
+      border: 1px solid #374151;
+      background-color: #1f2937;
+      overflow: hidden;
+    }
+    .viz-wrapper.horizontal {
+      width: 220px;
+      height: 120px;
+    }
+    .visualization-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    .tick-pulse {
+      position: absolute;
+      height: 3px;
+      background: linear-gradient(to right, transparent, #f87171, #ef4444);
+      transition: width 0.1s ease-out;
+      z-index: 5;
+    }
+    .tick-pulse.vert-left  { left: 0; transform-origin: right; }
+    .tick-pulse.vert-right { right: 0; transform-origin: left; }
+    .tick-pulse.horiz-left  { top: 0; transform-origin: bottom; width: 3px; height: 0; }
+    .tick-pulse.horiz-right { bottom: 0; transform-origin: top; width: 3px; height: 0; }
+
+    .distribution-dot {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+<body>
+<!-- Visualization Grid with 4 Meter Containers -->
+<div class="viz-grid">
+  <div class="viz-wrapper" id="meter-vert-dual"></div>
+  <div class="viz-wrapper" id="meter-vert-single"></div>
+  <div class="viz-wrapper horizontal" id="meter-horiz-dual"></div>
+  <div class="viz-wrapper horizontal" id="meter-horiz-single"></div>
+</div>
+
+<script>
+const configs = [
+  { id: 'meter-vert-dual', axis: 'vertical', singleSided: false },
+  { id: 'meter-vert-single', axis: 'vertical', singleSided: true },
+  { id: 'meter-horiz-dual', axis: 'horizontal', singleSided: false },
+  { id: 'meter-horiz-single', axis: 'horizontal', singleSided: true },
+];
+
+let currentPrice = 1.25500;
+const midPrice = 1.25500;
+
+configs.forEach(cfg => {
+  const el = document.getElementById(cfg.id);
+  const container = document.createElement('div');
+  container.className = 'visualization-container';
+  el.appendChild(container);
+  cfg.container = container;
+});
+
+function generateTick() {
+  const direction = Math.random() > 0.5 ? 1 : -1;
+  const rand = Math.random();
+  let magnitude = rand < 0.8 ? Math.random() * 0.8 : rand < 0.98 ? 0.8 + Math.random() * 2 : 3 + Math.random() * 5;
+  const tick = {
+    magnitude: magnitude,
+    direction: direction,
+    price: currentPrice + (direction * magnitude / 10000)
+  };
+  currentPrice = tick.price;
+  processTick(tick);
+}
+
+function processTick(tick) {
+  configs.forEach(cfg => {
+    const pulse = document.createElement('div');
+    pulse.classList.add('tick-pulse');
+
+    const axis = cfg.axis;
+    const dual = !cfg.singleSided;
+    const dir = tick.direction;
+
+    const scale = Math.min(tick.magnitude * 5, 100);
+
+    if (axis === 'vertical') {
+      if (dir > 0 || dual) {
+        pulse.classList.add('vert-right');
+        pulse.style.width = `${scale}px`;
+        pulse.style.top = '50%';
+      } else {
+        pulse.classList.add('vert-left');
+        pulse.style.width = `${scale}px`;
+        pulse.style.top = '50%';
+      }
+    } else {
+      if (dir > 0 || dual) {
+        pulse.classList.add('horiz-right');
+        pulse.style.height = `${scale}px`;
+        pulse.style.left = '50%';
+      } else {
+        pulse.classList.add('horiz-left');
+        pulse.style.height = `${scale}px`;
+        pulse.style.left = '50%';
+      }
+    }
+
+    cfg.container.appendChild(pulse);
+    setTimeout(() => pulse.remove(), 300);
+
+    // Dot trail
+    const dot = document.createElement('div');
+    dot.className = 'distribution-dot';
+    const range = 0.01; // ADR = 100pips
+    const pct = (currentPrice - (midPrice - range / 2)) / range;
+
+    if (axis === 'vertical') {
+      dot.style.top = `${(1 - pct) * 100}%`;
+      dot.style.left = `${50 + (dir * 10)}%`;
+      dot.style.backgroundColor = dir > 0 ? 'rgba(96,165,250,0.7)' : 'rgba(248,113,113,0.7)';
+    } else {
+      dot.style.left = `${pct * 100}%`;
+      dot.style.top = `${50 + (dir * 10)}%`;
+      dot.style.backgroundColor = dir > 0 ? 'rgba(96,165,250,0.7)' : 'rgba(248,113,113,0.7)';
+    }
+
+    cfg.container.appendChild(dot);
+    setTimeout(() => dot.remove(), 3000);
+  });
+}
+
+setInterval(generateTick, 600);
+</script>
+</body>
+</html>
