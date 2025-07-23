@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const { CTraderConnection } = require('@reiryoku/ctrader-layer');
+const { CTraderConnection, ProtoOAPayloadType } = require('@reiryoku/ctrader-layer');
 const EventEmitter = require('events');
 const logger = require('./logger');
 const SymbolSubscription = require('./src/subscription/SymbolSubscription');
@@ -24,6 +24,13 @@ class CTraderSession extends EventEmitter {
 
         this.connection.on('close', () => this.handleDisconnect());
         this.connection.on('error', (error) => this.emit('error', error));
+        // Use string name for event listener as per hypothesis
+        this.connection.on('PROTO_OA_SPOT_EVENT', (message) => {
+            // The message received here is already parsed by the library
+            if (this.subscription) {
+                this.subscription.handleTick(message);
+            }
+        });
 
         try {
             await this.connection.open();
@@ -32,6 +39,7 @@ class CTraderSession extends EventEmitter {
             await this.authenticate();
             await this.loadSymbols();
             
+            // Pass the connection to SymbolSubscription so it can use sendCommand
             this.subscription = new SymbolSubscription(this.connection);
             this.subscription.on('tick', (tick) => this.emit('tick', tick));
             this.subscription.on('error', (error) => logger.error('Subscription error:', error));
@@ -45,11 +53,12 @@ class CTraderSession extends EventEmitter {
 
     async authenticate() {
         try {
-            await this.connection.sendCommand(2100, {
+            // Use string names for sendCommand
+            await this.connection.sendCommand('ProtoOAApplicationAuthReq', {
                 clientId: process.env.CTRADER_CLIENT_ID,
                 clientSecret: process.env.CTRADER_CLIENT_SECRET,
             });
-            await this.connection.sendCommand(2102, {
+            await this.connection.sendCommand('ProtoOAAccountAuthReq', {
                 accessToken: process.env.CTRADER_ACCESS_TOKEN,
                 ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
             });
@@ -63,7 +72,8 @@ class CTraderSession extends EventEmitter {
 
     async loadSymbols() {
         try {
-            const data = await this.connection.sendCommand(2114, {
+            // Use string name for sendCommand
+            const data = await this.connection.sendCommand('ProtoOASymbolsListReq', {
                 ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
             });
             data.symbol.forEach(s => {
@@ -79,13 +89,15 @@ class CTraderSession extends EventEmitter {
 
     subscribe(symbolName) {
         const symbolId = this.symbolMap.get(symbolName);
-        if (symbolId) {
+        if (symbolId && this.subscription) {
             this.subscription.subscribe(symbolName, symbolId);
         }
     }
 
     unsubscribe(symbolName) {
-        this.subscription.unsubscribe(symbolName);
+        if (this.subscription) {
+            this.subscription.unsubscribe(symbolName);
+        }
     }
 
     handleDisconnect() {

@@ -1,0 +1,53 @@
+This is a critical decision point, and I will provide a comprehensive analysis of the options available to us. I have reviewed the specifications you've pointed to, your ctrader-live-feed.mjs example, and the behavior of the @reiryoku/ctrader-layer library.
+
+The core of our problem is a persistent TypeError within the @reiryoku/ctrader-layer library, specifically when listening for typed events (e.g., PROTO_OA_SPOT_EVENT). This prevents us from reliably receiving tick data through the library's intended event-driven mechanism. We have validated that direct communication with the cTrader API is possible, as demonstrated by your ctrader-live-feed.mjs script.
+
+We have three viable paths forward:
+
+Workaround the Library: Use the library for connection and authentication but bypass the broken event system by parsing raw messages ourselves.
+Full Custom Implementation: Abandon the library and build our own cTrader protocol client from the ground up.
+Fork and Fix the Library: Fork the @reiryoku/ctrader-layer repository, fix the underlying bug in our fork, and use that fixed version in our project.
+My recommendation is Option 3: Fork and Fix the Library. This approach resolves the root cause of our problem, provides the most stable and maintainable long-term architecture, and allows us to leverage the existing, functional parts of the library (connection, session management, command serialization) without resorting to temporary workarounds.
+
+The recurring error, TypeError: Cannot read properties of undefined (reading 'payloadType'), originates from CTraderProtobufReader.js within the @reiryoku/ctrader-layer library. Our experiments have shown that this error occurs whenever we try to attach a listener for a specific ProtoOAPayloadType event using connection.on(), regardless of whether we use the numeric ID or the string name. This strongly indicates a bug within the library's internal mapping or dispatching logic for received protobuf messages. It is not an error in our code, but a limitation of the library we are using.
+
+Architectural Approach: We continue to use @reiryoku/ctrader-layer for its strengths: establishing the TLS connection, handling authentication, and sending commands. However, we would listen only for the generic 'message' event. Our CTraderSession class would then be responsible for inspecting the payloadType of every incoming message and manually routing it to the correct handler (e.g., routing PROTO_OA_SPOT_EVENT payloads to our SymbolSubscription class).
+
+Architectural Implications:
+
+This introduces a "patch" or "shim" layer into our application. Our code becomes more complex because it has to compensate for the library's bug.
+We remain dependent on the library but are actively working around its core functionality. Future library updates could break our workaround.
+This is a form of technical debt. It's a short-term fix that makes the system harder to understand and maintain in the long run.
+Estimation:
+
+Effort: Low (2-4 hours). The implementation is straightforward, as we've already experimented with this approach.
+Architectural Approach: We remove the @reiryoku/ctrader-layer dependency entirely. We would build our own client using Node.js's native tls and protobufjs modules, inspired by your ctrader-live-feed.mjs script. This client would manage the entire lifecycle: TLS socket connection, heartbeat messages (as required by the protocol), protobuf message serialization/deserialization, request/response correlation, and error handling.
+
+Architectural Implications:
+
+This grants us complete control and removes reliance on a faulty third-party library. The architecture would be transparent and fully understood by our team.
+We would be taking on the significant responsibility of correctly implementing the entire cTrader Open API protocol. This includes not just sending and receiving ticks, but also session management, keep-alive pings, error handling, and reconnection logic, all of which the current library likely handles already.
+This is a "reinventing the wheel" scenario. While educational, it distracts from our primary goal of building the application's features.
+Estimation:
+
+Effort: High (3-5 days). This involves significant development and testing to ensure a robust and reliable implementation of the protocol.
+Architectural Approach: We treat the @reiryoku/ctrader-layer as the open-source project it is. We would:
+
+Fork the official repository on GitHub.
+Clone our fork locally and dive into the source code, specifically CTraderProtobufReader.js and CTraderConnection.js.
+Identify and fix the bug that causes the TypeError. The fix will likely involve correcting how the library maps payload type names/IDs to their corresponding protobuf message decoders.
+Update our project's package.json to point directly to our forked GitHub repository.
+(Optional but recommended) Submit a Pull Request back to the original author with the fix.
+Architectural Implications:
+
+This is the cleanest approach from our project's perspective. We get to use the library as intended, without any workarounds in our own application code.
+Our application code remains simple and focused on business logic. The CTraderSession can correctly use connection.on('PROTO_OA_SPOT_EVENT', ...) and the system becomes much more maintainable.
+We gain a deep understanding of our core dependency and contribute back to the community, potentially helping others who encounter the same issue.
+Estimation:
+
+Effort: Medium (1-2 days). This involves investigation, debugging the library code, implementing the fix, and testing. While the fix itself may be small, the investigation requires focused effort.
+While the "Library Workaround" (Option 1) is the fastest way to get unblocked, it introduces technical debt and instability. The "Full Custom" implementation (Option 2) is a significant undertaking that distracts from our project goals.
+
+Option 3 (Fork and Fix) represents the best balance of effort and outcome. It directly addresses the root cause of our problem and results in the most stable, professional, and maintainable architecture. It aligns perfectly with the principles of using open-source software.
+
+If you approve this recommendation, my immediate next step will be to begin a thorough analysis of the @reiryoku/ctrader-layer source code to pinpoint the exact location of the bug and formulate a plan to fix it.
