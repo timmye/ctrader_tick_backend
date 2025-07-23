@@ -1,398 +1,242 @@
 const WebSocket = require('ws');
 const { CTraderConnection } = require('@reiryoku/ctrader-layer');
 const EventEmitter = require('events');
+const logger = require('./logger');
+const SymbolSubscription = require('./src/subscription/SymbolSubscription');
 require('dotenv').config();
 
-class WebSocketTickStreamer extends EventEmitter {
-    constructor(port = process.env.PORT || 8080) {
+class CTraderSession extends EventEmitter {
+    constructor() {
         super();
-        this.wsPort = port;
-        this.wss = null;
         this.connection = null;
         this.isConnected = false;
         this.isAuthenticated = false;
-        this.subscribedSymbols = new Set();
-        this.clients = new Map(); // Track client subscriptions
-        this.symbolIdMap = this.createSymbolIdMap();
-        this.reverseSymbolMap = this.createReverseSymbolMap();
+        this.symbolMap = new Map();
+        this.reverseSymbolMap = new Map();
+        this.subscription = null;
     }
 
-    createSymbolIdMap() {
-        return {
-            'EURUSD': 1, 'GBPUSD': 2, 'USDJPY': 3, 'USDCHF': 4,
-            'AUDUSD': 5, 'USDCAD': 6, 'NZDUSD': 7, 'EURGBP': 8,
-            'EURJPY': 9, 'GBPJPY': 10, 'AUDCAD': 11, 'AUDCHF': 12,
-            'AUDJPY': 13, 'AUDNZD': 14, 'CADCHF': 15, 'CADJPY': 16,
-            'CHFJPY': 17, 'EURAUD': 18, 'EURCAD': 19, 'EURCHF': 20,
-            'EURNZD': 21, 'GBPAUD': 22, 'GBPCAD': 23, 'GBPCHF': 24,
-            'GBPNZD': 25, 'NZDCAD': 26, 'NZDCHF': 27, 'NZDJPY': 28
-        };
-    }
-
-    createReverseSymbolMap() {
-        const reverse = {};
-        Object.entries(this.symbolIdMap).forEach(([symbol, id]) => {
-            reverse[id] = symbol;
+    async connect() {
+        this.connection = new CTraderConnection({
+            host: process.env.HOST || 'demo.ctraderapi.com',
+            port: parseInt(process.env.PORT, 10) || 5035,
         });
-        return reverse;
-    }
 
-    async initializeCTrader() {
+        this.connection.on('close', () => this.handleDisconnect());
+        this.connection.on('error', (error) => this.emit('error', error));
+
         try {
-            console.log('Connecting to cTrader API...');
-            this.connection = new CTraderConnection({
-                host: process.env.HOST || 'demo.ctraderapi.com',
-                port: parseInt(process.env.PORT) || 5035
-            });
-
             await this.connection.open();
             this.isConnected = true;
-            console.log('✓ cTrader connection established');
-
+            logger.info('✓ cTrader connection established');
             await this.authenticate();
-            this.setupTickHandler();
+            await this.loadSymbols();
             
+            this.subscription = new SymbolSubscription(this.connection);
+            this.subscription.on('tick', (tick) => this.emit('tick', tick));
+            this.subscription.on('error', (error) => logger.error('Subscription error:', error));
+
+            this.emit('connected');
         } catch (error) {
-            console.error('✗ cTrader initialization failed:', error.message);
-            throw error;
+            logger.error('✗ cTrader connection failed:', error);
+            this.handleDisconnect();
         }
     }
 
     async authenticate() {
         try {
-            console.log('Authenticating with cTrader...');
-            
-            // Application authentication
             await this.connection.sendCommand(2100, {
                 clientId: process.env.CTRADER_CLIENT_ID,
-                clientSecret: process.env.CTRADER_CLIENT_SECRET
+                clientSecret: process.env.CTRADER_CLIENT_SECRET,
             });
-
-            // Account authentication
             await this.connection.sendCommand(2102, {
                 accessToken: process.env.CTRADER_ACCESS_TOKEN,
-                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID)
+                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
             });
-
             this.isAuthenticated = true;
-            console.log('✓ cTrader authentication successful');
+            logger.info('✓ cTrader authentication successful');
         } catch (error) {
-            console.error('✗ cTrader authentication failed:', error.message);
+            logger.error('✗ cTrader authentication failed:', error);
             throw error;
         }
     }
 
-    setupTickHandler() {
-        this.connection.on(2131, (tickData) => {
-            this.handleTick(tickData);
-        });
-    }
-
-    handleTick(tick) {
-        const symbol = this.reverseSymbolMap[tick.symbolId];
-        if (!symbol) return;
-
-        const tickUpdate = {
-            type: 'tick',
-            symbol: symbol,
-            symbolId: tick.symbolId,
-            bid: (tick.bid / 100000).toFixed(5),
-            ask: (tick.ask / 100000).toFixed(5),
-            timestamp: Date.now(),
-            spread: ((tick.ask - tick.bid) / 100000).toFixed(5)
-        };
-
-        // Broadcast to all subscribed clients
-        this.broadcastToSubscribedClients(symbol, tickUpdate);
-        
-        // Emit for internal use
-        this.emit('tick', tickUpdate);
-    }
-
-    broadcastToSubscribedClients(symbol, data) {
-        this.clients.forEach((clientData, ws) => {
-            if (ws.readyState === WebSocket.OPEN && clientData.subscriptions.has(symbol)) {
-                ws.send(JSON.stringify(data));
-            }
-        });
-    }
-
-    async subscribeToSymbol(symbol) {
-        const symbolId = this.symbolIdMap[symbol.toUpperCase()];
-        if (!symbolId) {
-            throw new Error(`Unknown symbol: ${symbol}`);
-        }
-
-        if (this.subscribedSymbols.has(symbolId)) {
-            return; // Already subscribed
-        }
-
+    async loadSymbols() {
         try {
-            await this.connection.sendCommand(2127, {
-                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID),
-                symbolId: [symbolId]
+            const data = await this.connection.sendCommand(2114, {
+                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
             });
-            
-            this.subscribedSymbols.add(symbolId);
-            console.log(`✓ Subscribed to ${symbol} (ID: ${symbolId})`);
+            data.symbol.forEach(s => {
+                this.symbolMap.set(s.symbolName, s.symbolId);
+                this.reverseSymbolMap.set(s.symbolId, s.symbolName);
+            });
+            logger.info(`✓ Loaded ${this.symbolMap.size} symbols`);
         } catch (error) {
-            console.error(`✗ Failed to subscribe to ${symbol}:`, error.message);
+            logger.error('✗ Failed to load symbols:', error);
             throw error;
         }
     }
 
-    async unsubscribeFromSymbol(symbol) {
-        const symbolId = this.symbolIdMap[symbol.toUpperCase()];
-        if (!symbolId || !this.subscribedSymbols.has(symbolId)) {
-            return; // Not subscribed
-        }
-
-        // Check if any other clients are still subscribed to this symbol
-        let stillNeeded = false;
-        this.clients.forEach((clientData) => {
-            if (clientData.subscriptions.has(symbol.toUpperCase())) {
-                stillNeeded = true;
-            }
-        });
-
-        if (!stillNeeded) {
-            try {
-                await this.connection.sendCommand(2128, {
-                    ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID),
-                    symbolId: [symbolId]
-                });
-                
-                this.subscribedSymbols.delete(symbolId);
-                console.log(`✓ Unsubscribed from ${symbol} (ID: ${symbolId})`);
-            } catch (error) {
-                console.error(`✗ Failed to unsubscribe from ${symbol}:`, error.message);
-            }
+    subscribe(symbolName) {
+        const symbolId = this.symbolMap.get(symbolName);
+        if (symbolId) {
+            this.subscription.subscribe(symbolName, symbolId);
         }
     }
 
-    startWebSocketServer() {
-        this.wss = new WebSocket.Server({ 
-            port: this.wsPort,
-            host: '0.0.0.0' // IDX requires binding to all interfaces
-        });
-        console.log(`🚀 WebSocket server started on port ${this.wsPort} (all interfaces)`);
+    unsubscribe(symbolName) {
+        this.subscription.unsubscribe(symbolName);
+    }
 
-        this.wss.on('connection', (ws, request) => {
-            const clientId = this.generateClientId();
-            console.log(`📱 Client connected: ${clientId}`);
-            
-            // Initialize client data
-            this.clients.set(ws, {
-                id: clientId,
-                subscriptions: new Set(),
-                connectedAt: Date.now()
-            });
+    handleDisconnect() {
+        this.isConnected = false;
+        this.isAuthenticated = false;
+        if (this.subscription) {
+            this.subscription.removeAllListeners();
+            this.subscription = null;
+        }
+        logger.warn('cTrader connection lost. Attempting to reconnect...');
+        this.emit('disconnected');
+    }
 
-            // Send welcome message
-            ws.send(JSON.stringify({
-                type: 'connection',
-                status: 'connected',
-                clientId: clientId,
-                availableSymbols: Object.keys(this.symbolIdMap),
-                timestamp: Date.now()
-            }));
+    async close() {
+        if (this.connection) {
+            await this.connection.close();
+        }
+    }
+}
 
-            ws.on('message', async (message) => {
-                try {
-                    await this.handleClientMessage(ws, JSON.parse(message.toString()));
-                } catch (error) {
-                    console.error('Error handling client message:', error.message);
-                    ws.send(JSON.stringify({
-                        type: 'error',
-                        message: error.message,
-                        timestamp: Date.now()
-                    }));
+class WebSocketServer extends EventEmitter {
+    constructor(port, cTraderSession) {
+        super();
+        this.wss = new WebSocket.Server({ port });
+        this.cTraderSession = cTraderSession;
+        this.clients = new Map();
+
+        this.wss.on('connection', ws => this.handleConnection(ws));
+        this.cTraderSession.on('tick', tick => this.broadcastTick(tick));
+    }
+
+    handleConnection(ws) {
+        const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const client = { id: clientId, subscriptions: new Set() };
+        this.clients.set(ws, client);
+        logger.info(`📱 Client connected: ${clientId}`);
+
+        ws.send(JSON.stringify({
+            type: 'connection',
+            status: 'connected',
+            clientId: clientId,
+            availableSymbols: Array.from(this.cTraderSession.symbolMap.keys()),
+        }));
+
+        ws.on('message', message => this.handleMessage(ws, message, client));
+        ws.on('close', () => this.handleDisconnect(ws, client));
+        ws.on('error', (error) => logger.error(`WebSocket error for client ${client.id}:`, error));
+    }
+
+    handleMessage(ws, message, client) {
+        try {
+            const parsedMessage = JSON.parse(message);
+            switch (parsedMessage.type) {
+                case 'subscribe':
+                    this.handleSubscription(client, parsedMessage.symbols, 'subscribe');
+                    break;
+                case 'unsubscribe':
+                    this.handleSubscription(client, parsedMessage.symbols, 'unsubscribe');
+                    break;
+            }
+        } catch (error) {
+            logger.error('Error handling client message:', error);
+        }
+    }
+
+    handleSubscription(client, symbols, type) {
+        symbols.forEach(symbolName => {
+            if (type === 'subscribe') {
+                client.subscriptions.add(symbolName);
+                this.cTraderSession.subscribe(symbolName);
+            } else {
+                client.subscriptions.delete(symbolName);
+                if (!this.isSymbolNeeded(symbolName)) {
+                    this.cTraderSession.unsubscribe(symbolName);
                 }
-            });
-
-            ws.on('close', () => {
-                this.handleClientDisconnect(ws);
-            });
-
-            ws.on('error', (error) => {
-                console.error(`WebSocket error for client ${clientId}:`, error.message);
-                this.handleClientDisconnect(ws);
-            });
+            }
         });
     }
 
-    async handleClientMessage(ws, message) {
-        const clientData = this.clients.get(ws);
-        if (!clientData) return;
-
-        switch (message.type) {
-            case 'subscribe':
-                await this.handleSubscribe(ws, message.symbols);
-                break;
-            case 'unsubscribe':
-                await this.handleUnsubscribe(ws, message.symbols);
-                break;
-            case 'ping':
-                ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
-                break;
-            case 'getSubscriptions':
-                ws.send(JSON.stringify({
-                    type: 'subscriptions',
-                    symbols: Array.from(clientData.subscriptions),
-                    timestamp: Date.now()
-                }));
-                break;
-            default:
-                ws.send(JSON.stringify({
-                    type: 'error',
-                    message: `Unknown message type: ${message.type}`,
-                    timestamp: Date.now()
-                }));
-        }
+    handleDisconnect(ws, client) {
+        logger.info(`📱 Client disconnected: ${client.id}`);
+        client.subscriptions.forEach(symbolName => {
+            if (!this.isSymbolNeeded(symbolName, ws)) {
+                this.cTraderSession.unsubscribe(symbolName);
+            }
+        });
+        this.clients.delete(ws);
     }
 
-    async handleSubscribe(ws, symbols) {
-        const clientData = this.clients.get(ws);
-        const results = [];
-
-        for (const symbol of symbols) {
-            try {
-                const upperSymbol = symbol.toUpperCase();
-                
-                // Subscribe to symbol if not already subscribed
-                await this.subscribeToSymbol(upperSymbol);
-                
-                // Add to client subscriptions
-                clientData.subscriptions.add(upperSymbol);
-                
-                results.push({ symbol: upperSymbol, status: 'subscribed' });
-            } catch (error) {
-                results.push({ symbol: symbol, status: 'error', message: error.message });
+    isSymbolNeeded(symbolName, excludedClient = null) {
+        for (const [ws, client] of this.clients.entries()) {
+            if (excludedClient && ws === excludedClient) continue;
+            if (client.subscriptions.has(symbolName)) {
+                return true;
             }
         }
-
-        ws.send(JSON.stringify({
-            type: 'subscribeResponse',
-            results: results,
-            timestamp: Date.now()
-        }));
+        return false;
     }
 
-    async handleUnsubscribe(ws, symbols) {
-        const clientData = this.clients.get(ws);
-        const results = [];
-
-        for (const symbol of symbols) {
-            const upperSymbol = symbol.toUpperCase();
-            
-            // Remove from client subscriptions
-            clientData.subscriptions.delete(upperSymbol);
-            
-            // Unsubscribe from cTrader if no other clients need it
-            await this.unsubscribeFromSymbol(upperSymbol);
-            
-            results.push({ symbol: upperSymbol, status: 'unsubscribed' });
-        }
-
-        ws.send(JSON.stringify({
-            type: 'unsubscribeResponse',
-            results: results,
-            timestamp: Date.now()
-        }));
+    broadcastTick(tick) {
+        const message = JSON.stringify(tick);
+        this.clients.forEach((client, ws) => {
+            if (ws.readyState === WebSocket.OPEN && client.subscriptions.has(tick.symbol)) {
+                ws.send(message);
+            }
+        });
     }
+}
 
-    handleClientDisconnect(ws) {
-        const clientData = this.clients.get(ws);
-        if (clientData) {
-            console.log(`📱 Client disconnected: ${clientData.id}`);
-            
-            // Clean up subscriptions for this client
-            clientData.subscriptions.forEach(async (symbol) => {
-                await this.unsubscribeFromSymbol(symbol);
-            });
-            
-            this.clients.delete(ws);
-        }
-    }
+class App {
+    constructor() {
+        this.cTraderSession = new CTraderSession();
+        this.webSocketServer = new WebSocketServer(process.env.PORT || 8080, this.cTraderSession);
+        this.reconnectTimeout = null;
+        this.reconnectDelay = 1000;
 
-    generateClientId() {
-        return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    }
-
-    getStatus() {
-        return {
-            ctraderConnected: this.isConnected,
-            ctraderAuthenticated: this.isAuthenticated,
-            connectedClients: this.clients.size,
-            subscribedSymbols: Array.from(this.subscribedSymbols).map(id => this.reverseSymbolMap[id]),
-            timestamp: Date.now()
-        };
+        this.cTraderSession.on('disconnected', () => this.scheduleReconnect());
     }
 
     async start() {
-        try {
-            // Validate environment
-            this.validateEnvironment();
-            
-            // Initialize cTrader connection
-            await this.initializeCTrader();
-            
-            // Start WebSocket server
-            this.startWebSocketServer();
-            
-            console.log('🎯 WebSocket Tick Streamer is ready for frontend connections!');
-            console.log(`📡 Connect to: ws://localhost:${this.wsPort}`);
-            console.log(`📡 IDX Preview URL: Check your IDX preview for WebSocket endpoint`);
-            
-        } catch (error) {
-            console.error('Failed to start WebSocket Tick Streamer:', error.message);
-            process.exit(1);
-        }
+        this.validateEnvironment();
+        await this.cTraderSession.connect();
     }
 
-    async stop() {
-        console.log('🛑 Stopping WebSocket Tick Streamer...');
-        
-        // Close WebSocket server
-        if (this.wss) {
-            this.wss.close();
-        }
-        
-        // Close cTrader connection
-        if (this.connection && this.isConnected) {
-            try {
-                await this.connection.close();
-                console.log('✓ cTrader connection closed');
-            } catch (error) {
-                console.error('Error closing cTrader connection:', error.message);
+    scheduleReconnect() {
+        if (this.reconnectTimeout) return;
+        this.reconnectTimeout = setTimeout(async () => {
+            logger.info(`Attempting to reconnect in ${this.reconnectDelay / 1000}s`);
+            this.reconnectTimeout = null;
+            await this.cTraderSession.connect();
+            if (!this.cTraderSession.isConnected) {
+                this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+            } else {
+                this.reconnectDelay = 1000;
             }
-        }
-        
-        process.exit(0);
+        }, this.reconnectDelay);
     }
 
     validateEnvironment() {
         const required = ['CTRADER_CLIENT_ID', 'CTRADER_CLIENT_SECRET', 'CTRADER_ACCESS_TOKEN', 'CTRADER_ACCOUNT_ID'];
-        const missing = required.filter(key => !process.env[key]);
-        
-        if (missing.length > 0) {
-            console.error('Missing required environment variables:', missing.join(', '));
-            console.error('Please check your .env file');
+        if (required.some(key => !process.env[key])) {
+            logger.error('Missing required environment variables. Please check your .env file');
             process.exit(1);
         }
     }
 }
 
-// Usage example
-if (require.main === module) {
-    const streamer = new WebSocketTickStreamer(process.env.PORT || 8080);
-    
-    // Handle graceful shutdown
-    process.on('SIGINT', () => streamer.stop());
-    process.on('SIGTERM', () => streamer.stop());
-    
-    // Start the WebSocket streamer
-    streamer.start();
-}
+const app = new App();
+app.start();
 
-module.exports = WebSocketTickStreamer;
+process.on('SIGINT', async () => {
+    await app.cTraderSession.close();
+    process.exit(0);
+});

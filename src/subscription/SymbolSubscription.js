@@ -1,88 +1,61 @@
 const EventEmitter = require('events');
-const { CTraderConnection } = require('@reiryoku/ctrader-layer');
+const { ProtoOAPayloadType } = require('@reiryoku/ctrader-layer');
 
 class SymbolSubscription extends EventEmitter {
-  constructor(connection, accessToken) {
-    super();
-    this.connection = connection;
-    this.accessToken = accessToken;
-    this.subscribedSymbols = new Set();
-    this.isConnected = false;
-    
-    this.setupConnectionHandlers();
-  }
+    constructor(connection) {
+        super();
+        this.connection = connection;
+        this.subscribedSymbols = new Map();
 
-  setupConnectionHandlers() {
-    this.connection.on('message', (message) => {
-      this.handleMessage(message);
-    });
-
-    this.connection.on('error', (error) => {
-      this.emit('error', error);
-    });
-  }
-
-  async subscribe(symbol) {
-    try {
-      if (this.subscribedSymbols.has(symbol)) {
-        return { success: true, message: 'Already subscribed' };
-      }
-
-      // Send subscription request
-      const subscriptionRequest = {
-        type: 'SUBSCRIBE_SYMBOL',
-        symbol: symbol,
-        accessToken: this.accessToken
-      };
-
-      await this.connection.send(subscriptionRequest);
-      this.subscribedSymbols.add(symbol);
-      
-      return { success: true, message: `Subscribed to ${symbol}` };
-    } catch (error) {
-      return { success: false, error: error.message };
+        this.connection.on(ProtoOAPayloadType.PROTO_OA_SPOT_EVENT, (message) => {
+            this.handleTick(message.payload);
+        });
     }
-  }
 
-  async unsubscribe(symbol) {
-    try {
-      if (!this.subscribedSymbols.has(symbol)) {
-        return { success: true, message: 'Not subscribed' };
-      }
+    async subscribe(symbolName, symbolId) {
+        if (this.subscribedSymbols.has(symbolName)) return;
 
-      const unsubscribeRequest = {
-        type: 'UNSUBSCRIBE_SYMBOL',
-        symbol: symbol,
-        accessToken: this.accessToken
-      };
-
-      await this.connection.send(unsubscribeRequest);
-      this.subscribedSymbols.delete(symbol);
-      
-      return { success: true, message: `Unsubscribed from ${symbol}` };
-    } catch (error) {
-      return { success: false, error: error.message };
+        try {
+            await this.connection.sendCommand(2127, {
+                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
+                symbolId: [symbolId],
+            });
+            this.subscribedSymbols.set(symbolName, symbolId);
+            this.emit('subscribed', { symbolName });
+        } catch (error) {
+            this.emit('error', { symbolName, error });
+        }
     }
-  }
 
-  handleMessage(message) {
-    if (message.type === 'TICK' && message.symbol) {
-      this.emit('tick', {
-        symbol: message.symbol,
-        bid: message.bid,
-        ask: message.ask,
-        timestamp: new Date(message.timestamp)
-      });
+    async unsubscribe(symbolName) {
+        const symbolId = this.subscribedSymbols.get(symbolName);
+        if (!symbolId) return;
+
+        try {
+            await this.connection.sendCommand(2128, {
+                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
+                symbolId: [symbolId],
+            });
+            this.subscribedSymbols.delete(symbolName);
+            this.emit('unsubscribed', { symbolName });
+        } catch (error) {
+            this.emit('error', { symbolName, error });
+        }
     }
-  }
 
-  getSubscribedSymbols() {
-    return Array.from(this.subscribedSymbols);
-  }
-
-  isSubscribed(symbol) {
-    return this.subscribedSymbols.has(symbol);
-  }
+    handleTick(tick) {
+        for (const [symbolName, symbolId] of this.subscribedSymbols.entries()) {
+            if (tick.symbolId === symbolId) {
+                this.emit('tick', {
+                    symbol: symbolName,
+                    bid: tick.bid / 100000,
+                    ask: tick.ask / 100000,
+                    timestamp: Date.now(),
+                });
+                break;
+            }
+        }
+    }
 }
 
-module.exports = { SymbolSubscription };
+module.exports = SymbolSubscription;

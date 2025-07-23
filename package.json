@@ -2,14 +2,13 @@
     "name": "ticks_v7",
     "version": "1.0.0",
     "description": "cTrader live tick streaming application",
-    "main": "stream.js",
+    "main": "websocket-tick-streamer.js",
     "scripts": {
         "test-subscription": "node test/test-subscription.js",
         "live-display": "node bin/live-display.js",
         "subscribe": "node bin/subscribe.js",
         "start": "node websocket-tick-streamer.js",
         "dev": "node websocket-tick-streamer.js",
-        "stream": "node stream.js",
         "ws-stream": "node websocket-tick-streamer.js"
     },
     "dependencies": {
@@ -23,7 +22,8 @@
         "cli-table3": "^0.6.3",
         "commander": "^14.0.0",
         "inquirer": "^8.2.6",
-        "yargs": "^17.7.2"
+        "yargs": "^17.7.2",
+        "winston": "^3.10.0"
     },
     "engines": {
         "node": ">=12.0.0"
