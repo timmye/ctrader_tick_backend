@@ -1,22 +1,17 @@
 const EventEmitter = require('events');
-const { ProtoOAPayloadType } = require('@reiryoku/ctrader-layer');
 
 class SymbolSubscription extends EventEmitter {
     constructor(connection) {
         super();
         this.connection = connection;
         this.subscribedSymbols = new Map();
-
-        this.connection.on(ProtoOAPayloadType.PROTO_OA_SPOT_EVENT, (message) => {
-            this.handleTick(message.payload);
-        });
     }
 
     async subscribe(symbolName, symbolId) {
         if (this.subscribedSymbols.has(symbolName)) return;
 
         try {
-            await this.connection.sendCommand(2127, {
+            await this.connection.sendCommand('ProtoOASubscribeSpotsReq', {
                 ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
                 symbolId: [symbolId],
             });
@@ -32,7 +27,7 @@ class SymbolSubscription extends EventEmitter {
         if (!symbolId) return;
 
         try {
-            await this.connection.sendCommand(2128, {
+            await this.connection.sendCommand('ProtoOAUnsubscribeSpotsReq', {
                 ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
                 symbolId: [symbolId],
             });
@@ -44,6 +39,8 @@ class SymbolSubscription extends EventEmitter {
     }
 
     handleTick(tick) {
+        // Find the symbol name from the tick's symbolId
+        // This is a bit inefficient, but necessary because the tick event doesn't contain the symbol name
         for (const [symbolName, symbolId] of this.subscribedSymbols.entries()) {
             if (tick.symbolId === symbolId) {
                 this.emit('tick', {

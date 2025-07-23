@@ -1,0 +1,18 @@
+syntax = "proto2";
+package protobuf;
+option java_package = "com.xtrader.protocol.proto.common.model";
+
+enum ProtoDayOfWeek {
+    MONDAY = 1;
+    TUESDAY = 2;
+    WEDNESDAY = 3;
+    THURSDAY = 4;
+    FRIDAY = 5;
+    SATURDAY = 6;
+    SUNDAY = 7;
+}
+
+message ProtoTimeOfDay {
+    required uint32 hour = 1;
+    required uint32 minute = 2;
+}

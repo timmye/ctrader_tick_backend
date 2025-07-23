@@ -1,0 +1,422 @@
+syntax = "proto2";
+package protobuf;
+option java_package = "com.xtrader.protocol.proto.openapi";
+
+import "OpenApiCommonMessages.proto";
+import "OpenApiModelMessages.proto";
+
+enum ProtoOAPayloadType {
+    PROTO_OA_APPLICATION_AUTH_REQ = 2100;
+    PROTO_OA_APPLICATION_AUTH_RES = 2101;
+    PROTO_OA_ACCOUNT_AUTH_REQ = 2102;
+    PROTO_OA_ACCOUNT_AUTH_RES = 2103;
+    PROTO_OA_VERSION_REQ = 2104;
+    PROTO_OA_VERSION_RES = 2105;
+    PROTO_OA_NEW_ORDER_REQ = 2106;
+    PROTO_OA_TRAILING_SL_CHANGED_EVENT = 2107;
+    PROTO_OA_CANCEL_ORDER_REQ = 2108;
+    PROTO_OA_AMEND_ORDER_REQ = 2109;
+    PROTO_OA_AMEND_POSITION_SLTP_REQ = 2110;
+    PROTO_OA_CLOSE_POSITION_REQ = 2111;
+    PROTO_OA_ASSET_LIST_REQ = 2112;
+    PROTO_OA_ASSET_LIST_RES = 2113;
+    PROTO_OA_SYMBOLS_LIST_REQ = 2114;
+    PROTO_OA_SYMBOLS_LIST_RES = 2115;
+    PROTO_OA_SYMBOL_BY_ID_REQ = 2116;
+    PROTO_OA_SYMBOL_BY_ID_RES = 2117;
+    PROTO_OA_SYMBOLS_FOR_CONVERSION_REQ = 2118;
+    PROTO_OA_SYMBOLS_FOR_CONVERSION_RES = 2119;
+    PROTO_OA_SYMBOL_CHANGED_EVENT = 2120;
+    PROTO_OA_TRADER_REQ = 2121;
+    PROTO_OA_TRADER_RES = 2122;
+    PROTO_OA_TRADER_UPDATE_EVENT = 2123;
+    PROTO_OA_RECONCILE_REQ = 2124;
+    PROTO_OA_RECONCILE_RES = 2125;
+    PROTO_OA_EXECUTION_EVENT = 2126;
+    PROTO_OA_SUBSCRIBE_SPOTS_REQ = 2127;
+    PROTO_OA_SUBSCRIBE_SPOTS_RES = 2128;
+    PROTO_OA_UNSUBSCRIBE_SPOTS_REQ = 2129;
+    PROTO_OA_UNSUBSCRIBE_SPOTS_RES = 2130;
+    PROTO_OA_SPOT_EVENT = 2131;
+    PROTO_OA_ORDER_ERROR_EVENT = 2132;
+    PROTO_OA_DEAL_LIST_REQ = 2133;
+    PROTO_OA_DEAL_LIST_RES = 2134;
+    PROTO_OA_SUBSCRIBE_DEPTH_QUOTES_REQ = 2135;
+    PROTO_OA_SUBSCRIBE_DEPTH_QUOTES_RES = 2136;
+    PROTO_OA_UNSUBSCRIBE_DEPTH_QUOTES_REQ = 2137;
+    PROTO_OA_UNSUBSCRIBE_DEPTH_QUOTES_RES = 2138;
+    PROTO_OA_DEPTH_EVENT = 2139;
+    PROTO_OA_SUBSCRIBE_LIVE_TRENDBAR_REQ = 2140;
+    PROTO_OA_UNSUBSCRIBE_LIVE_TRENDBAR_REQ = 2141;
+    PROTO_OA_GET_TRENDBARS_REQ = 2142;
+    PROTO_OA_GET_TRENDBARS_RES = 2143;
+    PROTO_OA_EXPECTED_MARGIN_REQ = 2144;
+    PROTO_OA_EXPECTED_MARGIN_RES = 2145;
+    PROTO_OA_MARGIN_CHANGED_EVENT = 2146;
+    PROTO_OA_ERROR_RES = 2147;
+    PROTO_OA_CASH_FLOW_HISTORY_LIST_REQ = 2148;
+    PROTO_OA_CASH_FLOW_HISTORY_LIST_RES = 2149;
+    PROTO_OA_GET_TICKDATA_REQ = 2150;
+    PROTO_OA_GET_TICKDATA_RES = 2151;
+    PROTO_OA_ACCOUNTS_TOKEN_INVALIDATED_EVENT = 2152;
+    PROTO_OA_CLIENT_DISCONNECT_EVENT = 2153;
+    PROTO_OA_GET_ACCOUNTS_BY_ACCESS_TOKEN_REQ = 2154;
+    PROTO_OA_GET_ACCOUNTS_BY_ACCESS_TOKEN_RES = 2155;
+    PROTO_OA_GET_CTID_PROFILE_BY_TOKEN_REQ = 2156;
+    PROTO_OA_GET_CTID_PROFILE_BY_TOKEN_RES = 2157;
+    PROTO_OA_ASSET_CLASS_LIST_REQ = 2158;
+    PROTO_OA_ASSET_CLASS_LIST_RES = 2159;
+    PROTO_OA_DEPTH_EVENT_2 = 2160;
+}
+
+message ProtoOAApplicationAuthReq {
+    required string clientId = 1;
+    required string clientSecret = 2;
+}
+
+message ProtoOAApplicationAuthRes {
+}
+
+message ProtoOAAccountAuthReq {
+    required int64 ctidTraderAccountId = 1;
+    required string accessToken = 2;
+}
+
+message ProtoOAAccountAuthRes {
+    optional int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOAVersionReq {
+}
+
+message ProtoOAVersionRes {
+    required string version = 1;
+}
+
+message ProtoOANewOrderReq {
+    required int64 ctidTraderAccountId = 1;
+    required string symbolName = 2;
+    required ProtoOAOrderType orderType = 3;
+    required ProtoOATradeSide tradeSide = 4;
+    required int64 volume = 5;
+    optional double limitPrice = 6;
+    optional double stopPrice = 7;
+    optional string comment = 8;
+    optional string clientOrderId = 9;
+    optional ProtoOATimeInForce timeInForce = 10;
+    optional int64 expirationTimestamp = 11;
+    optional double stopLoss = 12;
+    optional double takeProfit = 13;
+    optional double slippage = 14;
+    optional int64 positionId = 15;
+    optional bool relativeStopLoss = 16;
+    optional bool relativeTakeProfit = 17;
+    optional bool isStopOut = 18;
+    optional double trailingStopLoss = 19;
+    optional bool isStopLossTriggered = 20;
+    optional bool isTakeProfitTriggered = 21;
+}
+
+message ProtoOATrailingSLChangedEvent {
+    required int64 ctidTraderAccountId = 1;
+    required int64 positionId = 2;
+    required int64 orderId = 3;
+    required double stopPrice = 4;
+}
+
+message ProtoOACancelOrderReq {
+    required int64 ctidTraderAccountId = 1;
+    required int64 orderId = 2;
+}
+
+message ProtoOAAmendOrderReq {
+    required int64 ctidTraderAccountId = 1;
+    required int64 orderId = 2;
+    optional int64 volume = 3;
+    optional double limitPrice = 4;
+    optional double stopPrice = 5;
+    optional int64 expirationTimestamp = 6;
+    optional double stopLoss = 7;
+    optional double takeProfit = 8;
+    optional double slippage = 9;
+    optional bool relativeStopLoss = 10;
+    optional bool relativeTakeProfit = 11;
+    optional bool isStopOut = 12;
+    optional double trailingStopLoss = 13;
+    optional bool isStopLossTriggered = 14;
+    optional bool isTakeProfitTriggered = 15;
+}
+
+message ProtoOAAmendPositionSLTPReq {
+    required int64 ctidTraderAccountId = 1;
+    required int64 positionId = 2;
+    optional double stopLoss = 3;
+    optional double takeProfit = 4;
+    optional bool relativeStopLoss = 5;
+    optional bool relativeTakeProfit = 6;
+    optional bool isStopOut = 7;
+    optional double trailingStopLoss = 8;
+}
+
+message ProtoOAClosePositionReq {
+    required int64 ctidTraderAccountId = 1;
+    required int64 positionId = 2;
+    required int64 volume = 3;
+}
+
+message ProtoOAAssetListReq {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOAAssetListRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOAAsset asset = 2;
+}
+
+message ProtoOASymbolsListReq {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOASymbolsListRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOASymbol symbol = 2;
+}
+
+message ProtoOASymbolByIdReq {
+    required int64 ctidTraderAccountId = 1;
+    repeated int64 symbolId = 2;
+}
+
+message ProtoOASymbolByIdRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOASymbol symbol = 2;
+}
+
+message ProtoOASymbolsForConversionReq {
+    required int64 ctidTraderAccountId = 1;
+    required string firstAsset = 2;
+    repeated string lastAsset = 3;
+}
+
+message ProtoOASymbolsForConversionRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOASymbol symbol = 2;
+}
+
+message ProtoOASymbolChangedEvent {
+    required int64 ctidTraderAccountId = 1;
+    repeated int64 symbolId = 2;
+}
+
+message ProtoOATraderReq {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOATraderRes {
+    required int64 ctidTraderAccountId = 1;
+    required ProtoOATrader trader = 2;
+}
+
+message ProtoOATraderUpdateEvent {
+    required int64 ctidTraderAccountId = 1;
+    required ProtoOATrader trader = 2;
+}
+
+message ProtoOAReconcileReq {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOAReconcileRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOAOrder order = 2;
+    repeated ProtoOAPosition position = 3;
+}
+
+message ProtoOAExecutionEvent {
+    required int64 ctidTraderAccountId = 1;
+    required ProtoOAOrder order = 2;
+    required ProtoOADeal deal = 3;
+}
+
+message ProtoOASubscribeSpotsReq {
+    required int64 ctidTraderAccountId = 1;
+    repeated int64 symbolId = 2;
+}
+
+message ProtoOASubscribeSpotsRes {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOAUnsubscribeSpotsReq {
+    required int64 ctidTraderAccountId = 1;
+    repeated int64 symbolId = 2;
+}
+
+message ProtoOAUnsubscribeSpotsRes {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOASpotEvent {
+    required int64 ctidTraderAccountId = 1;
+    required int64 symbolId = 2;
+    optional double bid = 3;
+    optional double ask = 4;
+    repeated ProtoOATrendbar trendbar = 5;
+    optional int64 timestamp = 6;
+}
+
+message ProtoOAOrderErrorEvent {
+    required int64 ctidTraderAccountId = 1;
+    required int64 orderId = 2;
+    required string errorCode = 3;
+    optional string description = 4;
+}
+
+message ProtoOADealListReq {
+    required int64 ctidTraderAccountId = 1;
+    required int64 fromTimestamp = 2;
+    required int64 toTimestamp = 3;
+}
+
+message ProtoOADealListRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOADeal deal = 2;
+    required bool hasMore = 3;
+}
+
+message ProtoOASubscribeDepthQuotesReq {
+    required int64 ctidTraderAccountId = 1;
+    repeated int64 symbolId = 2;
+}
+
+message ProtoOASubscribeDepthQuotesRes {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOAUnsubscribeDepthQuotesReq {
+    required int64 ctidTraderAccountId = 1;
+    repeated int64 symbolId = 2;
+}
+
+message ProtoOAUnsubscribeDepthQuotesRes {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOADepthEvent {
+    required int64 ctidTraderAccountId = 1;
+    required int64 symbolId = 2;
+    repeated ProtoOADepthQuote quote = 3;
+}
+
+message ProtoOASubscribeLiveTrendbarReq {
+    required int64 ctidTraderAccountId = 1;
+    required ProtoOATrendbarPeriod period = 2;
+    required int64 symbolId = 3;
+}
+
+message ProtoOAUnsubscribeLiveTrendbarReq {
+    required int64 ctidTraderAccountId = 1;
+    required ProtoOATrendbarPeriod period = 2;
+    required int64 symbolId = 3;
+}
+
+message ProtoOAGetTrendbarsReq {
+    required int64 ctidTraderAccountId = 1;
+    required int64 fromTimestamp = 2;
+    required int64 toTimestamp = 3;
+    required ProtoOATrendbarPeriod period = 4;
+    required int64 symbolId = 5;
+}
+
+message ProtoOAGetTrendbarsRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOATrendbar trendbar = 2;
+    required int64 symbolId = 3;
+    required int64 timestamp = 4;
+}
+
+message ProtoOAExpectedMarginReq {
+    required int64 ctidTraderAccountId = 1;
+    required string symbolName = 2;
+    required int64 volume = 3;
+}
+
+message ProtoOAExpectedMarginRes {
+    required int64 ctidTraderAccountId = 1;
+    required int64 buyMargin = 2;
+    required int64 sellMargin = 3;
+}
+
+message ProtoOAMarginChangedEvent {
+    required int64 ctidTraderAccountId = 1;
+    required int64 positionId = 2;
+    required int64 margin = 3;
+}
+
+message ProtoOAErrorRes {
+    required string errorCode = 1;
+    optional string description = 2;
+}
+
+message ProtoOACashFlowHistoryListReq {
+    required int64 ctidTraderAccountId = 1;
+    required int64 fromTimestamp = 2;
+    required int64 toTimestamp = 3;
+}
+
+message ProtoOACashFlowHistoryListRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOADepositWithdraw transaction = 2;
+}
+
+message ProtoOAGetTickDataReq {
+    required int64 ctidTraderAccountId = 1;
+    required string symbolName = 2;
+    required ProtoOAQuoteType type = 3;
+    required int64 fromTimestamp = 4;
+    required int64 toTimestamp = 5;
+}
+
+message ProtoOAGetTickDataRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOATickData tickData = 2;
+    required bool hasMore = 3;
+}
+
+message ProtoOAAccountsTokenInvalidatedEvent {
+    required string accessToken = 1;
+}
+
+message ProtoOAClientDisconnectEvent {
+}
+
+message ProtoOAGetAccountsByAccessTokenReq {
+    required string accessToken = 1;
+}
+
+message ProtoOAGetAccountsByAccessTokenRes {
+    repeated ProtoOACtidTraderAccount ctidTraderAccount = 1;
+}
+
+message ProtoOAGetCtidProfileByTokenReq {
+    required string accessToken = 1;
+}
+
+message ProtoOAGetCtidProfileByTokenRes {
+    required ProtoOACtidProfile profile = 1;
+}
+
+message ProtoOAAssetClassListReq {
+    required int64 ctidTraderAccountId = 1;
+}
+
+message ProtoOAAssetClassListRes {
+    required int64 ctidTraderAccountId = 1;
+    repeated ProtoOAAssetClass assetClass = 2;
+}
+
+message ProtoOADepthEvent2 {
+    required int64 ctidTraderAccountId = 1;
+    required int64 symbolId = 2;
+    repeated ProtoOADepthQuote quote = 3;
+}

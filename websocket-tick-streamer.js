@@ -1,123 +1,272 @@
+const tls = require('tls');
+const protobuf = require('protobufjs');
+const path = require('path');
 const WebSocket = require('ws');
-const { CTraderConnection, ProtoOAPayloadType } = require('@reiryoku/ctrader-layer');
 const EventEmitter = require('events');
 const logger = require('./logger');
-const SymbolSubscription = require('./src/subscription/SymbolSubscription');
 require('dotenv').config();
 
-class CTraderSession extends EventEmitter {
-    constructor() {
+// --- CTraderClient: Custom implementation for cTrader Protocol ---
+class CTraderClient extends EventEmitter {
+    constructor(config) {
         super();
-        this.connection = null;
-        this.isConnected = false;
-        this.isAuthenticated = false;
-        this.symbolMap = new Map();
-        this.reverseSymbolMap = new Map();
-        this.subscription = null;
+        this.config = config;
+        this.socket = null;
+        this.receiveBuffer = Buffer.alloc(0);
+        this.protoRoot = null;
+        this.MessageTypes = {}; // For decoding incoming messages
+        this.RequestDecoders = {}; // For encoding outgoing messages
+        this.PayloadTypeEnum = {};
     }
 
-    async connect() {
-        this.connection = new CTraderConnection({
-            host: process.env.HOST || 'demo.ctraderapi.com',
-            port: parseInt(process.env.PORT, 10) || 5035,
+    async loadProtos() {
+        const protoDir = path.join(__dirname, 'protos');
+        const protoFiles = [
+            'OpenApiCommonMessages.proto',
+            'OpenApiCommonModelMessages.proto',
+            'OpenApiMessages.proto',
+            'OpenApiModelMessages.proto'
+        ].map(f => path.join(protoDir, f));
+
+        this.protoRoot = await protobuf.load(protoFiles);
+        this.ProtoMessage = this.protoRoot.lookupType('protobuf.ProtoMessage');
+        this.PayloadTypeEnum = this.protoRoot.lookupEnum('protobuf.ProtoOAPayloadType').values;
+
+        // Direct mapping of payload type names to their message types for *decoding incoming* messages
+        const MT = (n) => this.protoRoot.lookupType(`protobuf.${n}`);
+        this.MessageTypes = {
+            PROTO_OA_VERSION_RES: MT('ProtoOAVersionRes'),
+            PROTO_OA_APPLICATION_AUTH_RES: MT('ProtoOAApplicationAuthRes'),
+            PROTO_OA_ACCOUNT_AUTH_RES: MT('ProtoOAAccountAuthRes'),
+            PROTO_OA_SYMBOLS_LIST_RES: MT('ProtoOASymbolsListRes'),
+            PROTO_OA_SPOT_EVENT: MT('ProtoOASpotEvent'),
+            PROTO_OA_ERROR_RES: MT('ProtoOAErrorRes'),
+            PROTO_HEARTBEAT_EVENT: this.protoRoot.lookupType('protobuf.ProtoHeartbeatEvent'),
+        };
+
+        // Direct mapping for *encoding outgoing* messages (Req types and Heartbeat)
+        this.RequestDecoders = {
+            PROTO_OA_VERSION_REQ: MT('ProtoOAVersionReq'),
+            PROTO_OA_APPLICATION_AUTH_REQ: MT('ProtoOAApplicationAuthReq'),
+            PROTO_OA_ACCOUNT_AUTH_REQ: MT('ProtoOAAccountAuthReq'),
+            PROTO_OA_SYMBOLS_LIST_REQ: MT('ProtoOASymbolsListReq'),
+            PROTO_OA_SUBSCRIBE_SPOTS_REQ: MT('ProtoOASubscribeSpotsReq'),
+            PROTO_OA_UNSUBSCRIBE_SPOTS_REQ: MT('ProtoOAUnsubscribeSpotsReq'),
+            PROTO_HEARTBEAT_EVENT: this.protoRoot.lookupType('protobuf.ProtoHeartbeatEvent'),
+        };
+    }
+
+    connect() {
+        return new Promise(async (resolve, reject) => {
+            await this.loadProtos();
+
+            this.socket = tls.connect({
+                host: this.config.host,
+                port: this.config.port,
+                servername: this.config.host,
+            }, () => {
+                logger.info('🔗 CTrader TLS socket connected.');
+                this.emit('connect');
+                resolve();
+            });
+
+            this.socket.on('data', chunk => this.handleData(chunk));
+            this.socket.on('error', err => {
+                logger.error('⚠️ Socket error:', err.message);
+                this.emit('error', err);
+                reject(err);
+            });
+            this.socket.on('close', () => {
+                logger.warn('🔌 Socket closed.');
+                this.emit('close');
+            });
+        });
+    }
+
+    send(payloadTypeName, payload = {}) {
+        // Use RequestDecoders to find the correct message type for the payload
+        const RequestMessage = this.RequestDecoders[payloadTypeName];
+        if (!RequestMessage) {
+            throw new Error(`No message type decoder found for: ${payloadTypeName}`);
+        }
+        
+        const reqPayload = RequestMessage.create(payload);
+        const reqBuffer = RequestMessage.encode(reqPayload).finish();
+        
+        const protoMessage = this.ProtoMessage.create({
+            payloadType: this.PayloadTypeEnum[payloadTypeName],
+            payload: reqBuffer,
         });
 
-        this.connection.on('close', () => this.handleDisconnect());
-        this.connection.on('error', (error) => this.emit('error', error));
-        // Use string name for event listener as per hypothesis
-        this.connection.on('PROTO_OA_SPOT_EVENT', (message) => {
-            // The message received here is already parsed by the library
-            if (this.subscription) {
-                this.subscription.handleTick(message);
-            }
-        });
+        const wrapBuf = this.ProtoMessage.encode(protoMessage).finish();
+        const header = Buffer.alloc(4);
+        header.writeUInt32BE(wrapBuf.length, 0);
+        
+        this.socket.write(header);
+        this.socket.write(wrapBuf);
+        logger.info(`→ Sent ${payloadTypeName}`);
+    }
 
-        try {
-            await this.connection.open();
-            this.isConnected = true;
-            logger.info('✓ cTrader connection established');
-            await this.authenticate();
-            await this.loadSymbols();
+    handleData(chunk) {
+        this.receiveBuffer = Buffer.concat([this.receiveBuffer, chunk]);
+
+        while (this.receiveBuffer.length >= 4) {
+            const len = this.receiveBuffer.readUInt32BE(0);
+            if (this.receiveBuffer.length < 4 + len) break;
+
+            const msgBuf = this.receiveBuffer.slice(4, 4 + len);
+            this.receiveBuffer = this.receiveBuffer.slice(4 + len);
             
-            // Pass the connection to SymbolSubscription so it can use sendCommand
-            this.subscription = new SymbolSubscription(this.connection);
-            this.subscription.on('tick', (tick) => this.emit('tick', tick));
-            this.subscription.on('error', (error) => logger.error('Subscription error:', error));
+            const wrap = this.ProtoMessage.decode(msgBuf);
+            const pt = wrap.payloadType;
 
-            this.emit('connected');
-        } catch (error) {
-            logger.error('✗ cTrader connection failed:', error);
-            this.handleDisconnect();
+            const entry = Object.entries(this.PayloadTypeEnum).find(([name, id]) => id === pt);
+            if (entry) {
+                const [typeName] = entry;
+                const MessageType = this.MessageTypes[typeName];
+                if (MessageType) {
+                    const payload = MessageType.decode(wrap.payload);
+                    this.emit(typeName, payload);
+                } else {
+                    logger.warn(`ℹ️ No decoder for payload type: ${typeName} (${pt})`);
+                }
+            } else {
+                 logger.warn('ℹ️ Unhandled payload', pt);
+            }
         }
     }
 
-    async authenticate() {
-        try {
-            // Use string names for sendCommand
-            await this.connection.sendCommand('ProtoOAApplicationAuthReq', {
-                clientId: process.env.CTRADER_CLIENT_ID,
-                clientSecret: process.env.CTRADER_CLIENT_SECRET,
-            });
-            await this.connection.sendCommand('ProtoOAAccountAuthReq', {
-                accessToken: process.env.CTRADER_ACCESS_TOKEN,
-                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
-            });
-            this.isAuthenticated = true;
-            logger.info('✓ cTrader authentication successful');
-        } catch (error) {
-            logger.error('✗ cTrader authentication failed:', error);
-            throw error;
-        }
-    }
-
-    async loadSymbols() {
-        try {
-            // Use string name for sendCommand
-            const data = await this.connection.sendCommand('ProtoOASymbolsListReq', {
-                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
-            });
-            data.symbol.forEach(s => {
-                this.symbolMap.set(s.symbolName, s.symbolId);
-                this.reverseSymbolMap.set(s.symbolId, s.symbolName);
-            });
-            logger.info(`✓ Loaded ${this.symbolMap.size} symbols`);
-        } catch (error) {
-            logger.error('✗ Failed to load symbols:', error);
-            throw error;
-        }
-    }
-
-    subscribe(symbolName) {
-        const symbolId = this.symbolMap.get(symbolName);
-        if (symbolId && this.subscription) {
-            this.subscription.subscribe(symbolName, symbolId);
-        }
-    }
-
-    unsubscribe(symbolName) {
-        if (this.subscription) {
-            this.subscription.unsubscribe(symbolName);
-        }
-    }
-
-    handleDisconnect() {
-        this.isConnected = false;
-        this.isAuthenticated = false;
-        if (this.subscription) {
-            this.subscription.removeAllListeners();
-            this.subscription = null;
-        }
-        logger.warn('cTrader connection lost. Attempting to reconnect...');
-        this.emit('disconnected');
-    }
-
-    async close() {
-        if (this.connection) {
-            await this.connection.close();
+    close() {
+        if (this.socket) {
+            this.socket.end();
         }
     }
 }
 
+
+// --- CTraderSession: Application-level logic using CTraderClient ---
+class CTraderSession extends EventEmitter {
+    constructor() {
+        super();
+        this.client = new CTraderClient({
+            host: process.env.HOST,
+            port: parseInt(process.env.PORT, 10),
+        });
+        
+        this.symbolMap = new Map();
+        this.reverseSymbolMap = new Map();
+        this.subscribedSymbols = new Map();
+        this.heartbeatInterval = null;
+    }
+
+    async connect() {
+        this.client.on('connect', () => {
+            // Correctly send the version request with a payload and full typeName
+            this.client.send('PROTO_OA_VERSION_REQ', { version: { major: 2, minor: 0, patch: 0 } });
+        });
+
+        this.client.on('PROTO_OA_VERSION_RES', () => {
+            this.client.send('PROTO_OA_APPLICATION_AUTH_REQ', {
+                clientId: process.env.CTRADER_CLIENT_ID,
+                clientSecret: process.env.CTRADER_CLIENT_SECRET,
+            });
+        });
+
+        this.client.on('PROTO_OA_APPLICATION_AUTH_RES', () => {
+             this.client.send('PROTO_OA_ACCOUNT_AUTH_REQ', {
+                accessToken: process.env.CTRADER_ACCESS_TOKEN,
+                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
+            });
+        });
+        
+        this.client.on('PROTO_OA_ACCOUNT_AUTH_RES', () => {
+            logger.info('🔐 Account authenticated');
+            this.startHeartbeat();
+            this.loadSymbols();
+            this.emit('connected');
+        });
+
+        this.client.on('PROTO_OA_SYMBOLS_LIST_RES', (payload) => {
+             payload.symbol.forEach(s => {
+                this.symbolMap.set(s.symbolName, s.symbolId);
+                this.reverseSymbolMap.set(s.symbolId, s.symbolName);
+            });
+            logger.info(`✓ Loaded ${this.symbolMap.size} symbols`);
+            this.emit('symbolsLoaded');
+        });
+
+        this.client.on('PROTO_OA_SPOT_EVENT', (payload) => {
+            const symbolName = this.reverseSymbolMap.get(payload.symbolId);
+            if (symbolName) {
+                this.emit('tick', {
+                    symbol: symbolName,
+                    bid: payload.bid / 100000,
+                    ask: payload.ask / 100000,
+                    timestamp: Date.now(),
+                });
+            }
+        });
+
+        this.client.on('PROTO_OA_ERROR_RES', (payload) => {
+            logger.error('API Error:', payload.errorCode, payload.description);
+        });
+        
+        this.client.on('close', () => {
+            this.stopHeartbeat();
+            this.emit('disconnected');
+        });
+
+        await this.client.connect();
+    }
+
+    startHeartbeat() {
+        this.stopHeartbeat();
+        this.heartbeatInterval = setInterval(() => {
+            this.client.send('PROTO_HEARTBEAT_EVENT');
+        }, 25000);
+    }
+    
+    stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+        }
+    }
+
+    loadSymbols() {
+        this.client.send('PROTO_OA_SYMBOLS_LIST_REQ', {
+            ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10)
+        });
+    }
+
+    subscribe(symbolName) {
+        const symbolId = this.symbolMap.get(symbolName);
+        if (symbolId && !this.subscribedSymbols.has(symbolName)) {
+            this.client.send('PROTO_OA_SUBSCRIBE_SPOTS_REQ', {
+                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
+                symbolId: [symbolId]
+            });
+            this.subscribedSymbols.set(symbolName, symbolId);
+        }
+    }
+
+    unsubscribe(symbolName) {
+        const symbolId = this.subscribedSymbols.get(symbolName);
+        if (symbolId) {
+            this.client.send('PROTO_OA_UNSUBSCRIBE_SPOTS_REQ', {
+                ctidTraderAccountId: parseInt(process.env.CTRADER_ACCOUNT_ID, 10),
+                symbolId: [symbolId]
+            });
+            this.subscribedSymbols.delete(symbolName);
+        }
+    }
+    
+    close() {
+        this.client.close();
+    }
+}
+
+
+// --- WebSocketServer and App: No changes needed here ---
 class WebSocketServer extends EventEmitter {
     constructor(port, cTraderSession) {
         super();
@@ -135,12 +284,20 @@ class WebSocketServer extends EventEmitter {
         this.clients.set(ws, client);
         logger.info(`📱 Client connected: ${clientId}`);
 
-        ws.send(JSON.stringify({
-            type: 'connection',
-            status: 'connected',
-            clientId: clientId,
-            availableSymbols: Array.from(this.cTraderSession.symbolMap.keys()),
-        }));
+        const sendAvailableSymbols = () => {
+             ws.send(JSON.stringify({
+                type: 'connection',
+                status: 'connected',
+                clientId: clientId,
+                availableSymbols: Array.from(this.cTraderSession.symbolMap.keys()),
+            }));
+        };
+
+        if (this.cTraderSession.symbolMap.size > 0) {
+            sendAvailableSymbols();
+        } else {
+            this.cTraderSession.once('symbolsLoaded', sendAvailableSymbols);
+        }
 
         ws.on('message', message => this.handleMessage(ws, message, client));
         ws.on('close', () => this.handleDisconnect(ws, client));
@@ -212,7 +369,7 @@ class App {
         this.cTraderSession = new CTraderSession();
         this.webSocketServer = new WebSocketServer(process.env.PORT || 8080, this.cTraderSession);
         this.reconnectTimeout = null;
-        this.reconnectDelay = 1000;
+        this.reconnectDelay = 5000;
 
         this.cTraderSession.on('disconnected', () => this.scheduleReconnect());
     }
@@ -228,11 +385,6 @@ class App {
             logger.info(`Attempting to reconnect in ${this.reconnectDelay / 1000}s`);
             this.reconnectTimeout = null;
             await this.cTraderSession.connect();
-            if (!this.cTraderSession.isConnected) {
-                this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
-            } else {
-                this.reconnectDelay = 1000;
-            }
         }, this.reconnectDelay);
     }
 
@@ -249,6 +401,6 @@ const app = new App();
 app.start();
 
 process.on('SIGINT', async () => {
-    await app.cTraderSession.close();
+    app.cTraderSession.close();
     process.exit(0);
 });

@@ -1,0 +1,252 @@
+syntax = "proto2";
+package protobuf;
+option java_package = "com.xtrader.protocol.proto.openapi.model";
+
+import "OpenApiCommonModelMessages.proto";
+
+enum ProtoOAOrderType {
+    MARKET = 1;
+    LIMIT = 2;
+    STOP = 3;
+    PROTECTION = 4;
+}
+
+enum ProtoOATradeSide {
+    BUY = 1;
+    SELL = 2;
+}
+
+enum ProtoOAPositionStatus {
+    POSITION_STATUS_OPEN = 1;
+    POSITION_STATUS_CLOSED = 2;
+    POSITION_STATUS_CREATED = 3;
+    POSITION_STATUS_ERROR = 4;
+}
+
+enum ProtoOATimeInForce {
+    GOOD_TILL_CANCEL = 1;
+    GOOD_TILL_DATE = 2;
+    IMMEDIATE_OR_CANCEL = 3;
+}
+
+enum ProtoOAOrderStatus {
+    ORDER_STATUS_ACCEPTED = 1;
+    ORDER_STATUS_FILLED = 2;
+    ORDER_STATUS_REJECTED = 3;
+    ORDER_STATUS_EXPIRED = 4;
+    ORDER_STATUS_CANCELLED = 5;
+}
+
+enum ProtoOADealStatus {
+    FILLED = 2;
+    PARTIALLY_FILLED = 3;
+    REJECTED = 4;
+    INTERNALLY_REJECTED = 5;
+    ERROR = 6;
+}
+
+enum ProtoOATrendbarPeriod {
+    M1 = 1;
+    M2 = 2;
+    M3 = 3;
+    M4 = 4;
+    M5 = 5;
+    M10 = 6;
+    M15 = 7;
+    M30 = 8;
+    H1 = 9;
+    H4 = 10;
+    H12 = 11;
+    D1 = 12;
+    W1 = 13;
+    MN1 = 14;
+}
+
+enum ProtoOAQuoteType {
+    BID = 1;
+    ASK = 2;
+}
+
+enum ProtoOADayOfWeek {
+    MONDAY = 1;
+    TUESDAY = 2;
+    WEDNESDAY = 3;
+    THURSDAY = 4;
+    FRIDAY = 5;
+    SATURDAY = 6;
+    SUNDAY = 7;
+}
+
+enum ProtoOADepositWithdrawType {
+    DEPOSIT = 1;
+    WITHDRAW = 2;
+}
+
+message ProtoOAAsset {
+    required int64 assetId = 1;
+    required string name = 2;
+    optional string displayName = 3;
+    optional int32 digits = 4;
+}
+
+message ProtoOASymbol {
+    required int64 symbolId = 1;
+    required int32 digits = 2;
+    required int32 pipPosition = 3;
+    required bool enableShortMargin = 4;
+    required int64 lotSize = 5;
+    required int64 minVolume = 6;
+    required int64 maxVolume = 7;
+    required int64 stepVolume = 8;
+    required int64 swapLong = 9;
+    required int64 swapShort = 10;
+    required int64 fee = 11;
+    required int64 minCommission = 12;
+    required ProtoOACommissionType commissionType = 13;
+    required double tickValue = 14;
+    optional string symbolName = 15;
+    optional int64 baseAssetId = 16;
+    optional int64 quoteAssetId = 17;
+    optional int64 symbolCategoryId = 18;
+    optional string description = 19;
+    optional int64 slDistance = 20;
+    optional int64 tpDistance = 21;
+    optional int64 gslDistance = 22;
+    optional int64 gslCharge = 23;
+    optional bool gslEnabled = 24;
+    optional int64 swapRollover3days = 25;
+    optional int64 swapTickValue = 26;
+    optional int64 distance = 27;
+    optional int64 distanceSetIn = 28;
+    optional int64 minStopLimitDistance = 29;
+}
+
+message ProtoOATrader {
+    required int64 ctidTraderAccountId = 1;
+    required int64 balance = 2;
+    required int64 depositAssetId = 3;
+    optional bool isLimitedRisk = 4;
+    optional int64 leverage = 5;
+    optional int64 freeMargin = 6;
+    optional int64 margin = 7;
+    optional int64 equity = 8;
+}
+
+message ProtoOAPosition {
+    required int64 positionId = 1;
+    required int64 ctidTraderAccountId = 2;
+    required ProtoOAPositionStatus positionStatus = 3;
+    required ProtoOATradeSide tradeSide = 4;
+    required int64 volume = 5;
+    required double entryPrice = 6;
+    required int64 swap = 7;
+    required int64 commission = 8;
+    required int64 openTimestamp = 9;
+    optional int64 closeTimestamp = 10;
+    optional double stopLoss = 11;
+    optional double takeProfit = 12;
+    optional double closePrice = 13;
+    optional int64 profit = 14;
+    optional bool relativeStopLoss = 15;
+    optional bool relativeTakeProfit = 16;
+    optional bool isStopOut = 17;
+    optional double trailingStopLoss = 18;
+    optional int64 profitInPips = 19;
+}
+
+message ProtoOAOrder {
+    required int64 orderId = 1;
+    required int64 ctidTraderAccountId = 2;
+    required ProtoOAOrderStatus orderStatus = 3;
+    required ProtoOAOrderType orderType = 4;
+    required ProtoOATradeSide tradeSide = 5;
+    required int64 volume = 6;
+    required int64 executedVolume = 7;
+    optional double executionPrice = 8;
+    optional int64 executionTimestamp = 9;
+    optional int64 expirationTimestamp = 10;
+    optional double limitPrice = 11;
+    optional double stopPrice = 12;
+    optional double stopLoss = 13;
+    optional double takeProfit = 14;
+    optional string comment = 15;
+    optional bool relativeStopLoss = 16;
+    optional bool relativeTakeProfit = 17;
+    optional bool isStopOut = 18;
+    optional double trailingStopLoss = 19;
+    optional int64 positionId = 20;
+    optional int64 closePositionDetail = 21;
+    optional bool isStopLossTriggered = 22;
+    optional bool isTakeProfitTriggered = 23;
+}
+
+message ProtoOADeal {
+    required int64 dealId = 1;
+    required int64 orderId = 2;
+    required int64 positionId = 3;
+    required int64 volume = 4;
+    required int64 executedVolume = 5;
+    required int64 executionTimestamp = 6;
+    required ProtoOADealStatus dealStatus = 7;
+    required int64 commission = 8;
+    required int64 baseToUsdConversionRate = 9;
+    required int64 usdToAccountConversionRate = 10;
+    required double closePositionDetail = 11;
+}
+
+message ProtoOADepthQuote {
+    required int64 price = 1;
+    required int64 volume = 2;
+    required int64 index = 3;
+}
+
+message ProtoOATrendbar {
+    required int64 volume = 1;
+    required ProtoOATrendbarPeriod period = 2;
+    optional int64 low = 3;
+    optional int64 deltaOpen = 4;
+    optional int64 deltaClose = 5;
+    optional int64 deltaHigh = 6;
+    optional uint32 utcTimestampInMinutes = 7;
+}
+
+message ProtoOADepositWithdraw {
+    required int64 transactionId = 1;
+    required ProtoOADepositWithdrawType type = 2;
+    required int64 amount = 3;
+    required int64 timestamp = 4;
+}
+
+message ProtoOATickData {
+    required int64 timestamp = 1;
+    required int64 tick = 2;
+}
+
+message ProtoOACtidTraderAccount {
+    required int64 ctidTraderAccountId = 1;
+    required bool isLive = 2;
+}
+
+message ProtoOACtidProfile {
+    required int64 userId = 1;
+}
+
+message ProtoOAHoliday {
+    required int64 holidayId = 1;
+    required string name = 2;
+    optional string description = 3;
+    required int64 schedule_timezone = 4;
+    required int64 holiday_date = 5;
+    required bool is_recurring = 6;
+}
+
+message ProtoOAAssetClass {
+    optional int64 id = 1;
+    optional string name = 2;
+}
+
+enum ProtoOACommissionType {
+    USD_PER_MILLION_USD = 1;
+    USD_PER_LOT = 2;
+    PERCENTAGE_OF_VALUE = 3;
+}
