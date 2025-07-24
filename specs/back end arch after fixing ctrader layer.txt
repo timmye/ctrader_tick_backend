@@ -1,0 +1,51 @@
+ We've successfully repaired our tool—the ctrader-layer library—and now it's time to use it to build the actual lean, performant, and simple backend service we need.
+
+I have analyzed the fixed ctrader-layer, your reference code in ctrader_tick_backend/api, and the best practices outlined in your specs. Here is the delta between our current status and the desired production-ready backend.
+
+We currently have a locally fixed @reiryoku/ctrader-layer library. The critical bug that prevented it from receiving live data events has been resolved. The library can now reliably:
+
+Establish a connection to the cTrader API.
+Send authentication and other commands.
+Receive and decode all message types, including PROTO_OA_SPOT_EVENT.
+However, what we have is a functional component, not a functional service. The engine is fixed, but it's not yet in a car.
+
+Our goal is a standalone, resilient backend service that:
+
+Manages Connection Lifecycle: Connects and authenticates automatically, sends periodic heartbeats to maintain the connection (as per your spec), and gracefully handles disconnects by attempting to reconnect.
+Manages Subscriptions: Efficiently subscribes to the 20+ required symbols and manages the data streams.
+Provides a Clean Interface: Exposes a simple, performant WebSocket server that our front-end can connect to for receiving a clean, processed stream of tick data.
+Is Lean and Simple: The architecture is easy to understand and maintain, with a clear separation of concerns.
+The gap between our current status and the desired state consists of three main areas:
+
+Architectural Gap: We lack the application-level logic to use the fixed library. There is no session manager, no WebSocket server, and no main application entry point to tie everything together. The code in ctrader_tick_backend/api is a great starting point but needs to be structured into a more robust service.
+Robustness Gap: The current code does not implement the critical best practices you've highlighted. There is no persistent heartbeat mechanism, no automatic reconnection logic, and error handling is basic.
+Configuration Gap: Credentials need to be loaded securely and used by the application logic, not just hardcoded in a test script.
+I will now build this backend service, using your reference code as a guide and integrating the best practices. This plan is designed to be lean and simple by separating the core responsibilities.
+
+Create the Core CTraderSession Module: I will create a new module, ctrader_tick_backend/CTraderSession.js, to encapsulate all logic for interacting with the cTrader-Layer. This class will:
+
+Load credentials from ctrader_tick_backend/.env.
+Manage the connection lifecycle (connect, auth, disconnect).
+Implement the mandatory heartbeat (setInterval to send ProtoHeartbeatEvent every 10-20 seconds).
+Handle automatic reconnection on unexpected disconnection.
+Manage symbol subscriptions.
+Emit simple, clean events like tick, connected, and disconnected.
+Create the WebSocket Server Module: I will create ctrader_tick_backend/WebSocketServer.js. This module will be responsible only for client communication:
+
+It will listen for incoming WebSocket connections.
+It will subscribe to the tick events from our CTraderSession module.
+When a tick event is received, it will broadcast the data to all connected and subscribed WebSocket clients.
+Create the Main Application Entry Point: I will create ctrader_tick_backend/server.js, which will be the main executable. This lean file will:
+
+Import and instantiate the CTraderSession.
+Import and instantiate the WebSocketServer, passing it the session instance.
+Start the CTraderSession.
+This architecture ensures a clean separation of concerns, making the system lean, performant, and easy to maintain, directly addressing your core requirements.
+
+I am ready to begin. My first step will be to read the .env file and the reference websocket-tick-streamer.js to ensure I build the CTraderSession module correctly.
+
+My apologies, I see the .env file is still empty. I will proceed by using placeholder credentials and will add comments to the code indicating where to populate them. I will now read the websocket-tick-streamer.js file for reference.
+
+I have reviewed the websocket_api_docs.md and understand the desired API structure for the WebSocket server.
+
+I will now create the ctrader_tick_backend/CTraderSession.js module. This module will use the fixed cTrader-Layer library and your .env configuration to manage the cTrader connection, authentication, heartbeats, and symbol subscriptions, emitting clean events for the WebSocket server to consume.
