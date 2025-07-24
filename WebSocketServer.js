@@ -8,7 +8,10 @@ class WebSocketServer {
         this.backendSubscriptions = new Map(); // Map: symbolName -> count of clients
 
         this.wss.on('connection', (ws) => this.handleConnection(ws));
-        this.cTraderSession.on('tick', (tick) => this.broadcastTick(tick));
+        this.cTraderSession.on('tick', (tick) => {
+            // console.log('WebSocketServer received tick event from CTraderSession:', tick); // Removed log
+            this.broadcastTick(tick);
+        });
 
         console.log(`WebSocket server started on port ${port}`);
     }
@@ -49,6 +52,7 @@ class WebSocketServer {
 
             switch (data.type) {
                 case 'subscribe':
+                    // console.log(`Received subscribe request from client for symbols: ${data.symbols}`); // Removed log
                     const symbolsToSubscribe = Array.isArray(data.symbols) ? data.symbols : [data.symbols];
                     const subscribeResults = [];
 
@@ -65,6 +69,7 @@ class WebSocketServer {
                     break;
 
                 case 'unsubscribe':
+                    // console.log(`Received unsubscribe request from client for symbols: ${data.symbols}`); // Removed log
                     const symbolsToUnsubscribe = Array.isArray(data.symbols) ? data.symbols : [data.symbols];
                     const unsubscribeResults = [];
 
@@ -131,6 +136,7 @@ class WebSocketServer {
     }
 
     broadcastTick(tick) {
+        // console.log('Broadcasting tick:', tick); // Removed log
         const message = JSON.stringify({ type: 'tick', ...tick });
         this.wss.clients.forEach((client) => {
             // Only send to clients who are subscribed to this specific symbol

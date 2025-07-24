@@ -25,16 +25,26 @@ class CTraderSession extends EventEmitter {
         });
 
         this.connection.on('PROTO_OA_SPOT_EVENT', (event) => {
-            const symbolName = this.reverseSymbolMap.get(event.symbolId);
+            // console.log('Received raw PROTO_OA_SPOT_EVENT:', event); // Removed log
+            
+            // Convert Long symbolId to a number for map lookup
+            const symbolId = event.symbolId.toNumber();
+            const symbolName = this.reverseSymbolMap.get(symbolId);
+
             if (symbolName) {
-                this.emit('tick', {
+                const tick = {
                     symbol: symbolName,
-                    symbolId: event.symbolId,
+                    symbolId: symbolId,
                     bid: event.bid / 100000.0,
                     ask: event.ask / 100000.0,
                     spread: (event.ask - event.bid) / 100000.0,
                     timestamp: Date.now(),
-                });
+                };
+                // console.log('Processed tick object:', tick); // Removed log
+                this.emit('tick', tick);
+                // console.log('CTraderSession emitted tick event'); // Removed log
+            } else {
+                console.warn(`Received tick for unknown symbolId: ${symbolId}`);
             }
         });
 
@@ -83,8 +93,9 @@ class CTraderSession extends EventEmitter {
         });
 
         response.symbol.forEach(s => {
-            this.symbolMap.set(s.symbolName, s.symbolId);
-            this.reverseSymbolMap.set(s.symbolId, s.symbolName);
+            // Ensure symbolId is stored as a number when populating the map
+            this.symbolMap.set(s.symbolName, s.symbolId.toNumber()); 
+            this.reverseSymbolMap.set(s.symbolId.toNumber(), s.symbolName); 
         });
         console.log(`Loaded ${this.symbolMap.size} symbols.`);
     }
@@ -119,7 +130,7 @@ class CTraderSession extends EventEmitter {
             ctidTraderAccountId: this.ctidTraderAccountId,
             symbolId: symbolIds,
         });
-        console.log(`Subscribed to symbols: ${symbolNames.join(', ')}`);
+        console.log(`Sent subscribe request for symbols: ${symbolNames.join(', ')}`);
     }
     
     async unsubscribeFromSymbols(symbolNames = []) {
@@ -132,7 +143,7 @@ class CTraderSession extends EventEmitter {
             ctidTraderAccountId: this.ctidTraderAccountId,
             symbolId: symbolIds,
         });
-        console.log(`Unsubscribed from symbols: ${symbolNames.join(', ')}`);
+        console.log(`Sent unsubscribe request for symbols: ${symbolNames.join(', ')}`);
     }
 }
 
