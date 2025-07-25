@@ -8,10 +8,9 @@ class WebSocketServer {
         this.backendSubscriptions = new Map(); // Map: symbolName -> count of clients
 
         this.wss.on('connection', (ws) => this.handleConnection(ws));
-        this.cTraderSession.on('tick', (tick) => {
-            // console.log('WebSocketServer received tick event from CTraderSession:', tick); // Removed log
-            this.broadcastTick(tick);
-        });
+        
+        this.cTraderSession.on('tick', (tick) => this.broadcastTick(tick));
+        this.cTraderSession.on('status', (status) => this.broadcastStatus(status));
 
         console.log(`WebSocket server started on port ${port}`);
     }
@@ -20,25 +19,19 @@ class WebSocketServer {
         console.log('Client connected');
         this.clientSubscriptions.set(ws, new Set());
 
-        // Send initial connection message with available symbols
-        if (this.cTraderSession.symbolMap.size > 0) {
-            ws.send(JSON.stringify({
-                type: 'connection',
-                status: 'connected',
-                availableSymbols: Array.from(this.cTraderSession.symbolMap.keys()),
-                timestamp: Date.now(),
-            }));
-        } else {
-            // If symbols are not yet loaded, wait for them
-            this.cTraderSession.once('connected', () => {
-                ws.send(JSON.stringify({
-                    type: 'connection',
-                    status: 'connected',
-                    availableSymbols: Array.from(this.cTraderSession.symbolMap.keys()),
-                    timestamp: Date.now(),
-                }));
-            });
+        // Send the current connection status immediately
+        const currentStatus = this.cTraderSession.getStatus();
+        const message = {
+            type: 'status',
+            status: currentStatus,
+            timestamp: Date.now(),
+        };
+
+        // If connected, also provide the list of available symbols
+        if (currentStatus === 'connected') {
+            message.availableSymbols = Array.from(this.cTraderSession.symbolMap.keys());
         }
+        ws.send(JSON.stringify(message));
 
         ws.on('message', (message) => this.handleMessage(ws, message));
         ws.on('close', () => this.handleDisconnect(ws));
@@ -46,13 +39,34 @@ class WebSocketServer {
     }
 
     async handleMessage(ws, message) {
+        console.log('Received message from client:', message.toString()); // Added for diagnostics
         try {
             const data = JSON.parse(message);
             const clientSubs = this.clientSubscriptions.get(ws);
 
             switch (data.type) {
+                case 'connect':
+                    console.log('Received "connect" request from client.');
+                    this.cTraderSession.connect(); // Fire-and-forget; status is broadcast by events
+                    break;
+                
+                case 'disconnect':
+                    console.log('Received "disconnect" request from client.');
+                    this.cTraderSession.disconnect();
+                    break;
+                
+                case 'status':
+                    ws.send(JSON.stringify({
+                        type: 'status',
+                        status: this.cTraderSession.getStatus(),
+                        timestamp: Date.now()
+                    }));
+                    break;
+
                 case 'subscribe':
-                    // console.log(`Received subscribe request from client for symbols: ${data.symbols}`); // Removed log
+                    if (this.cTraderSession.getStatus() !== 'connected') {
+                        return ws.send(JSON.stringify({ type: 'error', message: 'Cannot subscribe: cTrader session is not connected.', timestamp: Date.now() }));
+                    }
                     const symbolsToSubscribe = Array.isArray(data.symbols) ? data.symbols : [data.symbols];
                     const subscribeResults = [];
 
@@ -69,7 +83,6 @@ class WebSocketServer {
                     break;
 
                 case 'unsubscribe':
-                    // console.log(`Received unsubscribe request from client for symbols: ${data.symbols}`); // Removed log
                     const symbolsToUnsubscribe = Array.isArray(data.symbols) ? data.symbols : [data.symbols];
                     const unsubscribeResults = [];
 
@@ -119,7 +132,6 @@ class WebSocketServer {
         this.backendSubscriptions.set(symbolName, currentCount + 1);
 
         if (currentCount === 0) {
-            // First client for this symbol, subscribe with cTrader
             await this.cTraderSession.subscribeToSymbols([symbolName]);
         }
     }
@@ -129,20 +141,36 @@ class WebSocketServer {
         if (currentCount > 0) {
             this.backendSubscriptions.set(symbolName, currentCount - 1);
             if (currentCount - 1 === 0) {
-                // Last client unsubscribed, unsubscribe from cTrader
                 await this.cTraderSession.unsubscribeFromSymbols([symbolName]);
             }
         }
     }
-
+    
     broadcastTick(tick) {
-        // console.log('Broadcasting tick:', tick); // Removed log
         const message = JSON.stringify({ type: 'tick', ...tick });
         this.wss.clients.forEach((client) => {
-            // Only send to clients who are subscribed to this specific symbol
             const clientSubs = this.clientSubscriptions.get(client);
             if (client.readyState === WebSocket.OPEN && clientSubs && clientSubs.has(tick.symbol)) {
                 client.send(message);
+            }
+        });
+    }
+
+    broadcastStatus(status) {
+        console.log(`Broadcasting cTrader connection status: ${status}`);
+        const message = {
+            type: 'status',
+            status: status,
+            timestamp: Date.now(),
+        };
+        // When the session becomes connected, send the available symbols to all clients
+        if (status === 'connected') {
+            message.availableSymbols = Array.from(this.cTraderSession.symbolMap.keys());
+        }
+        const serializedMessage = JSON.stringify(message);
+        this.wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(serializedMessage);
             }
         });
     }

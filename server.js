@@ -8,22 +8,22 @@ const port = process.env.WS_PORT || 8080;
 const session = new CTraderSession();
 const server = new WebSocketServer(port, session);
 
-session.on('connected', async () => {
+// The session is no longer connected automatically.
+// Connection is now initiated by a 'connect' message from a WebSocket client.
+
+session.on('connected', () => {
     console.log('CTrader session connected and symbols loaded.');
-    // Subscriptions are now handled by WebSocketServer based on client requests
 });
 
 session.on('disconnected', () => {
     console.log('CTrader session disconnected.');
 });
 
-session.connect();
-
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
     console.log('Shutting down backend...');
     if (session.connection) {
-        session.connection.close();
+        session.disconnect();
     }
     if (server.wss) {
         server.wss.close();
