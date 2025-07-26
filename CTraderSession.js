@@ -16,7 +16,7 @@ class CTraderSession extends EventEmitter {
         
         this.symbolMap = new Map();
         this.reverseSymbolMap = new Map();
-        this.symbolInfoMap = new Map();
+        this.symbolInfoMap = new Map(); // Will cache full symbol info on-demand
     }
 
     async connect() {
@@ -33,17 +33,15 @@ class CTraderSession extends EventEmitter {
         this.connection.on('PROTO_OA_SPOT_EVENT', (event) => {
             const symbolId = event.symbolId.toNumber();
             const symbolInfo = this.symbolInfoMap.get(symbolId);
-// 
-            if (symbolInfo) {
+
+            if (symbolInfo && event.bid?.low && event.ask?.low) {
                 const tick = {
                     symbol: symbolInfo.symbolName,
-                    bid: event.bid / Math.pow(10, symbolInfo.digits),
-                    ask: event.ask / Math.pow(10, symbolInfo.digits),
+                    bid: event.bid.low / Math.pow(10, symbolInfo.digits),
+                    ask: event.ask.low / Math.pow(10, symbolInfo.digits),
                     timestamp: Date.now(),
                 };
                 this.emit('tick', tick);
-            } else {
-                console.warn(`Received tick for unknown symbolId: ${symbolId}`);
             }
         });
 
@@ -95,15 +93,14 @@ class CTraderSession extends EventEmitter {
 
         this.symbolMap.clear();
         this.reverseSymbolMap.clear();
-        this.symbolInfoMap.clear();
+        this.symbolInfoMap.clear(); // Will be populated on-demand
 
         response.symbol.forEach(s => {
             const symbolIdNum = s.symbolId.toNumber();
             this.symbolMap.set(s.symbolName, symbolIdNum);
             this.reverseSymbolMap.set(symbolIdNum, s.symbolName);
-            this.symbolInfoMap.set(symbolIdNum, s);
         });
-        console.log(`Loaded ${this.symbolMap.size} symbols.`);
+        console.log(`Loaded ${this.symbolMap.size} light symbols.`);
     }
 
     startHeartbeat() {
@@ -138,49 +135,88 @@ class CTraderSession extends EventEmitter {
     }
 
     async getSymbolDataPackage(symbolName) {
-        const symbolId = this.symbolMap.get(symbolName);
-        if (!symbolId) throw new Error(`Symbol ${symbolName} not found.`);
-        
-        const symbolInfo = this.symbolInfoMap.get(symbolId);
-        const divisor = Math.pow(10, symbolInfo.digits);
+        try {
+            const symbolId = this.symbolMap.get(symbolName);
+            if (!symbolId) {
+                throw new Error(`Invalid symbol: ${symbolName}`);
+            }
+            
+            let symbolInfo = this.symbolInfoMap.get(symbolId);
+            if (!symbolInfo) {
+                console.log(`[CTraderSession] Cache miss for ${symbolName} (ID: ${symbolId}). Fetching full symbol data...`);
+                const response = await this.connection.sendCommand('ProtoOASymbolByIdReq', {
+                    ctidTraderAccountId: this.ctidTraderAccountId,
+                    symbolId: [symbolId],
+                });
 
-        const to = moment.utc().endOf('day').valueOf();
-        const from = moment.utc(to).subtract(8, 'days').startOf('day').valueOf();
-        const dailyBars = await this.getTrendbars(symbolId, 'D1', from, to);
+                if (!response.symbol || response.symbol.length === 0) {
+                    throw new Error(`Failed to fetch full details for symbol ID ${symbolId}`);
+                }
+                symbolInfo = response.symbol[0];
+                this.symbolInfoMap.set(symbolId, symbolInfo);
+            }
+            
+            console.log('[CTraderSession] Using SymbolInfo:', JSON.stringify(symbolInfo, null, 2));
+            const divisor = Math.pow(10, symbolInfo.digits);
+            console.log(`[CTraderSession] Divisor: ${divisor} (from digits: ${symbolInfo.digits})`);
+            if (isNaN(divisor) || divisor === 0) {
+                throw new Error(`Invalid divisor calculated for symbol ${symbolName}. Digits: ${symbolInfo.digits}`);
+            }
 
-        if (dailyBars.length < 6) {
-             throw new Error(`Not enough historical data. Expected at least 6 daily bars, got ${dailyBars.length}`);
+            const to = moment.utc().valueOf();
+            const from = moment.utc().subtract(8, 'days').valueOf();
+
+            const dailyBars = await this.getTrendbars(symbolId, 'D1', from, to);
+            console.log('[CTraderSession] RAW BARS:', JSON.stringify(dailyBars, null, 2));
+
+            if (!dailyBars || dailyBars.length < 6) {
+                 throw new Error(`Not enough historical data. Expected at least 6 daily bars, got ${dailyBars?.length || 0}`);
+            }
+            
+            const todaysBar = dailyBars[dailyBars.length - 1];
+            
+            if (todaysBar?.low?.low === undefined || todaysBar?.deltaOpen?.low === undefined) {
+                throw new Error(`Today's bar has invalid or missing price components. Bar: ${JSON.stringify(todaysBar)}`);
+            }
+            
+            const todaysOpen = (todaysBar.low.low + todaysBar.deltaOpen.low) / divisor;
+
+            const adrBars = dailyBars.slice(dailyBars.length - 6, dailyBars.length - 1);
+            const adrRanges = [];
+            
+            for (const bar of adrBars) {
+                if (bar?.low?.low !== undefined && bar?.deltaHigh?.low !== undefined) {
+                    const low = bar.low.low;
+                    const high = low + bar.deltaHigh.low;
+                    adrRanges.push((high / divisor) - (low / divisor));
+                }
+            }
+
+            if (adrRanges.length < 5) {
+                throw new Error(`Could not calculate ADR from enough bars. Found ${adrRanges.length} valid bars.`);
+            }
+
+            const adr = adrRanges.reduce((sum, range) => sum + range, 0) / adrRanges.length;
+            
+            const projectedHigh = todaysOpen + (adr / 2);
+            const projectedLow = todaysOpen - (adr / 2);
+
+            const dataPackage = {
+                symbol: symbolName,
+                adr,
+                todaysOpen,
+                projectedHigh,
+                projectedLow,
+            };
+
+            console.log('[CTraderSession] Successfully created data package:', dataPackage);
+            return dataPackage;
+
+        } catch (error) {
+            console.error(`[CTraderSession] FAILED to get symbol data package for ${symbolName}:`, error.message);
+            // Re-throw the original error so the WebSocket server can catch it and notify the client
+            throw error;
         }
-        
-        const adrBars = dailyBars.slice(-6, -1);
-        const adr = adrBars.reduce((sum, bar) => {
-            const high = (bar.open + bar.deltaHigh) / divisor;
-            const low = (bar.open + bar.deltaLow) / divisor;
-            return sum + (high - low);
-        }, 0) / adrBars.length;
-        
-        const todaysBar = dailyBars[dailyBars.length - 1];
-        const todaysOpen = todaysBar.open / divisor;
-        const projectedHigh = todaysOpen + (adr / 2);
-        const projectedLow = todaysOpen - (adr / 2);
-
-        const todayStart = moment.utc().startOf('day').valueOf();
-        const now = moment.utc().valueOf();
-        const minuteBars = await this.getTrendbars(symbolId, 'M1', todayStart, now);
-
-        const initialMarketProfile = minuteBars.map(bar => ({
-            price: bar.open / divisor,
-            volume: bar.volume,
-        }));
-        
-        return {
-            symbol: symbolName,
-            adr,
-            todaysOpen,
-            projectedHigh,
-            projectedLow,
-            initialMarketProfile,
-        };
     }
 
     async subscribeToTicks(symbolName) {
