@@ -16,7 +16,7 @@ class CTraderSession extends EventEmitter {
         
         this.symbolMap = new Map();
         this.reverseSymbolMap = new Map();
-        this.symbolInfoMap = new Map(); // Will cache full symbol info on-demand
+        this.symbolInfoMap = new Map();
     }
 
     async connect() {
@@ -34,11 +34,12 @@ class CTraderSession extends EventEmitter {
             const symbolId = event.symbolId.toNumber();
             const symbolInfo = this.symbolInfoMap.get(symbolId);
 
-            if (symbolInfo && event.bid?.low && event.ask?.low) {
+            // CORRECTED: Use .toNumber() on the Long objects for live ticks
+            if (symbolInfo && typeof event.bid?.toNumber === 'function' && typeof event.ask?.toNumber === 'function') {
                 const tick = {
                     symbol: symbolInfo.symbolName,
-                    bid: event.bid.low / Math.pow(10, symbolInfo.digits),
-                    ask: event.ask.low / Math.pow(10, symbolInfo.digits),
+                    bid: event.bid.toNumber() / Math.pow(10, symbolInfo.digits),
+                    ask: event.ask.toNumber() / Math.pow(10, symbolInfo.digits),
                     timestamp: Date.now(),
                 };
                 this.emit('tick', tick);
@@ -93,8 +94,8 @@ class CTraderSession extends EventEmitter {
 
         this.symbolMap.clear();
         this.reverseSymbolMap.clear();
-        this.symbolInfoMap.clear(); // Will be populated on-demand
-
+        // NOTE: symbolInfoMap is populated on-demand in getSymbolDataPackage
+        
         response.symbol.forEach(s => {
             const symbolIdNum = s.symbolId.toNumber();
             this.symbolMap.set(s.symbolName, symbolIdNum);
@@ -175,19 +176,21 @@ class CTraderSession extends EventEmitter {
             
             const todaysBar = dailyBars[dailyBars.length - 1];
             
-            if (todaysBar?.low?.low === undefined || todaysBar?.deltaOpen?.low === undefined) {
+            // CORRECTED: Check for existence and then use .toNumber()
+            if (typeof todaysBar?.low?.toNumber !== 'function' || typeof todaysBar?.deltaOpen?.toNumber !== 'function') {
                 throw new Error(`Today's bar has invalid or missing price components. Bar: ${JSON.stringify(todaysBar)}`);
             }
             
-            const todaysOpen = (todaysBar.low.low + todaysBar.deltaOpen.low) / divisor;
+            const todaysOpen = (todaysBar.low.toNumber() + todaysBar.deltaOpen.toNumber()) / divisor;
 
             const adrBars = dailyBars.slice(dailyBars.length - 6, dailyBars.length - 1);
             const adrRanges = [];
             
             for (const bar of adrBars) {
-                if (bar?.low?.low !== undefined && bar?.deltaHigh?.low !== undefined) {
-                    const low = bar.low.low;
-                    const high = low + bar.deltaHigh.low;
+                // CORRECTED: Check for existence and then use .toNumber()
+                if (typeof bar?.low?.toNumber === 'function' && typeof bar?.deltaHigh?.toNumber === 'function') {
+                    const low = bar.low.toNumber();
+                    const high = low + bar.deltaHigh.toNumber();
                     adrRanges.push((high / divisor) - (low / divisor));
                 }
             }
@@ -214,7 +217,6 @@ class CTraderSession extends EventEmitter {
 
         } catch (error) {
             console.error(`[CTraderSession] FAILED to get symbol data package for ${symbolName}:`, error.message);
-            // Re-throw the original error so the WebSocket server can catch it and notify the client
             throw error;
         }
     }
