@@ -1,6 +1,3 @@
 [submodule "/home/user/neurosensefx/ctrader_tick_backend"]
 	path = /home/user/neurosensefx/ctrader_tick_backend
 	url = https://github.com/timmye/ctrader_tick_backend
-[submodule "ctrader_tick_backend"]
-	path = ctrader_tick_backend
-	url = https://github.com/timmye/ctrader_tick_backend
