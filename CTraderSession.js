@@ -14,9 +14,9 @@ class CTraderSession extends EventEmitter {
         this.clientId = process.env.CTRADER_CLIENT_ID;
         this.clientSecret = process.env.CTRADER_CLIENT_SECRET;
         
-        this.symbolMap = new Map(); // Name -> ID
-        this.reverseSymbolMap = new Map(); // ID -> Name
-        this.symbolInfoMap = new Map(); // ID -> Full Symbol Info
+        this.symbolMap = new Map();
+        this.reverseSymbolMap = new Map();
+        this.symbolInfoMap = new Map();
     }
 
     async connect() {
@@ -33,7 +33,7 @@ class CTraderSession extends EventEmitter {
         this.connection.on('PROTO_OA_SPOT_EVENT', (event) => {
             const symbolId = event.symbolId.toNumber();
             const symbolInfo = this.symbolInfoMap.get(symbolId);
-
+// 
             if (symbolInfo) {
                 const tick = {
                     symbol: symbolInfo.symbolName,
@@ -101,7 +101,7 @@ class CTraderSession extends EventEmitter {
             const symbolIdNum = s.symbolId.toNumber();
             this.symbolMap.set(s.symbolName, symbolIdNum);
             this.reverseSymbolMap.set(symbolIdNum, s.symbolName);
-            this.symbolInfoMap.set(symbolIdNum, s); // Store the full symbol object
+            this.symbolInfoMap.set(symbolIdNum, s);
         });
         console.log(`Loaded ${this.symbolMap.size} symbols.`);
     }
@@ -130,7 +130,7 @@ class CTraderSession extends EventEmitter {
         const response = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', {
             ctidTraderAccountId: this.ctidTraderAccountId,
             symbolId: symbolId,
-            period: period, // e.g., 'D1', 'M1'
+            period: period,
             fromTimestamp: from,
             toTimestamp: to,
         });
@@ -139,36 +139,31 @@ class CTraderSession extends EventEmitter {
 
     async getSymbolDataPackage(symbolName) {
         const symbolId = this.symbolMap.get(symbolName);
-        if (symbolId === undefined) {
-            throw new Error(`Symbol ${symbolName} not found.`);
-        }
+        if (!symbolId) throw new Error(`Symbol ${symbolName} not found.`);
+        
         const symbolInfo = this.symbolInfoMap.get(symbolId);
         const divisor = Math.pow(10, symbolInfo.digits);
 
-        // 1. Fetch Daily bars for ADR calculation (last 5 days)
         const to = moment.utc().endOf('day').valueOf();
-        const from = moment.utc(to).subtract(6, 'days').startOf('day').valueOf();
+        const from = moment.utc(to).subtract(8, 'days').startOf('day').valueOf();
         const dailyBars = await this.getTrendbars(symbolId, 'D1', from, to);
 
-        if (dailyBars.length < 2) {
-            throw new Error('Not enough historical data to calculate ADR.');
+        if (dailyBars.length < 6) {
+             throw new Error(`Not enough historical data. Expected at least 6 daily bars, got ${dailyBars.length}`);
         }
+        
+        const adrBars = dailyBars.slice(-6, -1);
+        const adr = adrBars.reduce((sum, bar) => {
+            const high = (bar.open + bar.deltaHigh) / divisor;
+            const low = (bar.open + bar.deltaLow) / divisor;
+            return sum + (high - low);
+        }, 0) / adrBars.length;
+        
+        const todaysBar = dailyBars[dailyBars.length - 1];
+        const todaysOpen = todaysBar.open / divisor;
+        const projectedHigh = todaysOpen + (adr / 2);
+        const projectedLow = todaysOpen - (adr / 2);
 
-        // 2. Calculate 5-day ADR and get previous day's high/low
-        const relevantBars = dailyBars.slice(-6, -1); // Last 5 full days
-        let adrSum = 0;
-        relevantBars.forEach(bar => {
-            const high = bar.deltaHigh / divisor;
-            const low = bar.open / divisor; // Note: cTrader trendbar 'low' is relative to open
-            adrSum += (high - low);
-        });
-        const adr = adrSum / relevantBars.length;
-
-        const prevDayBar = relevantBars[relevantBars.length - 1];
-        const prevDayHigh = (prevDayBar.deltaHigh / divisor);
-        const prevDayLow = prevDayBar.open / divisor;
-
-        // 3. Fetch M1 bars for today for initial market profile
         const todayStart = moment.utc().startOf('day').valueOf();
         const now = moment.utc().valueOf();
         const minuteBars = await this.getTrendbars(symbolId, 'M1', todayStart, now);
@@ -181,45 +176,34 @@ class CTraderSession extends EventEmitter {
         return {
             symbol: symbolName,
             adr,
-            prevDayHigh,
-            prevDayLow,
+            todaysOpen,
+            projectedHigh,
+            projectedLow,
             initialMarketProfile,
         };
     }
 
-    async subscribeTicks(symbolName) {
+    async subscribeToTicks(symbolName) {
         if (!this.connection) throw new Error("Not connected");
         
         const symbolId = this.symbolMap.get(symbolName);
-        if (symbolId === undefined) {
-             console.warn(`Cannot subscribe, symbol not found: ${symbolName}`);
+        if (!symbolId) {
+            console.warn(`Cannot subscribe, symbol not found: ${symbolName}`);
             return;
         }
 
-        // First, get the historical data package
-        try {
-            const dataPackage = await this.getSymbolDataPackage(symbolName);
-            this.emit('symbolDataPackage', dataPackage);
-        } catch (error) {
-            console.error(`Failed to get data package for ${symbolName}:`, error);
-            // Optionally emit an error to the frontend
-            this.emit('error', `Failed to get historical data for ${symbolName}.`);
-            return; // Stop subscription if historical data fails
-        }
-
-        // Then, subscribe to live ticks
         await this.connection.sendCommand('ProtoOASubscribeSpotsReq', {
             ctidTraderAccountId: this.ctidTraderAccountId,
             symbolId: [symbolId],
         });
-        console.log(`Successfully subscribed to ${symbolName}`);
+        console.log(`Successfully subscribed to ticks for ${symbolName}`);
     }
     
-    async unsubscribeTicks(symbolName) {
+    async unsubscribeFromTicks(symbolName) {
         if (!this.connection) throw new Error("Not connected");
 
         const symbolId = this.symbolMap.get(symbolName);
-        if (symbolId === undefined) {
+        if (!symbolId) {
              console.warn(`Cannot unsubscribe, symbol not found: ${symbolName}`);
             return;
         }
@@ -228,7 +212,7 @@ class CTraderSession extends EventEmitter {
             ctidTraderAccountId: this.ctidTraderAccountId,
             symbolId: [symbolId],
         });
-        console.log(`Sent unsubscribe request for symbol: ${symbolName}`);
+        console.log(`Sent unsubscribe request for ${symbolName}`);
     }
 }
 
