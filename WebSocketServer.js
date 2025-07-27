@@ -24,10 +24,17 @@ class WebSocketServer {
 
     updateBackendStatus(status, message = null, availableSymbols = []) {
         this.currentBackendStatus = status;
-        this.currentAvailableSymbols = availableSymbols;
-        const statusData = { type: 'status', status, availableSymbols };
+        if (availableSymbols && availableSymbols.length > 0) {
+            this.currentAvailableSymbols = availableSymbols;
+        }
+        
+        const statusData = { type: 'status', status, availableSymbols: this.currentAvailableSymbols };
         if (message) statusData.message = message;
         this.broadcastToAll(statusData);
+
+        if (status === 'connected') {
+            this.broadcastToAll({ type: 'ready', availableSymbols: this.currentAvailableSymbols });
+        }
     }
 
     handleConnection(ws) {
@@ -36,6 +43,13 @@ class WebSocketServer {
         ws.on('message', (message) => this.handleMessage(ws, message));
         ws.on('close', () => this.handleClose(ws));
         ws.on('error', (error) => this.handleError(ws, error));
+
+        // Immediately send the current status and ready message if already connected
+        if (this.currentBackendStatus === 'connected') {
+            this.sendToClient(ws, { type: 'ready', availableSymbols: this.currentAvailableSymbols });
+        } else {
+            this.sendToClient(ws, { type: 'status', status: this.currentBackendStatus });
+        }
     }
 
     async handleMessage(ws, message) {
@@ -45,14 +59,10 @@ class WebSocketServer {
 
             switch (data.type) {
                 case 'connect':
-                    this.sendToClient(ws, { 
-                        type: 'status', 
-                        status: this.currentBackendStatus,
-                        availableSymbols: this.currentAvailableSymbols 
-                    });
+                    // This case is now handled in handleConnection
                     break;
-                case 'get_symbol_data':
-                    await this.handleGetSymbolData(ws, data.symbol);
+                case 'get_symbol_data_package':
+                    await this.handleGetSymbolData(ws, data.symbol, data.adrLookbackDays);
                     break;
                 case 'start_tick_stream':
                     await this.handleStartTickStream(ws, data.symbol);
@@ -69,13 +79,14 @@ class WebSocketServer {
         }
     }
 
-    async handleGetSymbolData(ws, symbolName) {
+    async handleGetSymbolData(ws, symbolName, adrLookbackDays = 14) {
+        // CORRECTED: Use .includes() to validate against an array of strings
         if (!symbolName || !this.currentAvailableSymbols.includes(symbolName)) {
             return this.sendToClient(ws, { type: 'error', message: `Invalid symbol: ${symbolName}` });
         }
         try {
-            console.log(`Fetching initial data for ${symbolName}...`);
-            const dataPackage = await this.cTraderSession.getSymbolDataPackage(symbolName);
+            console.log(`Fetching initial data for ${symbolName} with ADR lookback ${adrLookbackDays}...`);
+            const dataPackage = await this.cTraderSession.getSymbolDataPackage(symbolName, adrLookbackDays);
             this.sendToClient(ws, { type: 'symbolDataPackage', ...dataPackage });
         } catch (error) {
             console.error(`Failed to get data package for ${symbolName}:`, error);

@@ -2,7 +2,6 @@ console.log('Executing backend server.js');
 const { CTraderSession } = require('./CTraderSession');
 const { WebSocketServer } = require('./WebSocketServer');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const port = process.env.WS_PORT || 8080;
 

@@ -34,12 +34,12 @@ class CTraderSession extends EventEmitter {
             const symbolId = event.symbolId.toNumber();
             const symbolInfo = this.symbolInfoMap.get(symbolId);
 
-            // CORRECTED: Use .toNumber() on the Long objects for live ticks
             if (symbolInfo && typeof event.bid?.toNumber === 'function' && typeof event.ask?.toNumber === 'function') {
+                const divisor = Math.pow(10, symbolInfo.digits);
                 const tick = {
                     symbol: symbolInfo.symbolName,
-                    bid: event.bid.toNumber() / Math.pow(10, symbolInfo.digits),
-                    ask: event.ask.toNumber() / Math.pow(10, symbolInfo.digits),
+                    bid: event.bid.toNumber() / divisor,
+                    ask: event.ask.toNumber() / divisor,
                     timestamp: Date.now(),
                 };
                 this.emit('tick', tick);
@@ -94,7 +94,6 @@ class CTraderSession extends EventEmitter {
 
         this.symbolMap.clear();
         this.reverseSymbolMap.clear();
-        // NOTE: symbolInfoMap is populated on-demand in getSymbolDataPackage
         
         response.symbol.forEach(s => {
             const symbolIdNum = s.symbolId.toNumber();
@@ -144,7 +143,6 @@ class CTraderSession extends EventEmitter {
             
             let symbolInfo = this.symbolInfoMap.get(symbolId);
             if (!symbolInfo) {
-                console.log(`[CTraderSession] Cache miss for ${symbolName} (ID: ${symbolId}). Fetching full symbol data...`);
                 const response = await this.connection.sendCommand('ProtoOASymbolByIdReq', {
                     ctidTraderAccountId: this.ctidTraderAccountId,
                     symbolId: [symbolId],
@@ -157,9 +155,7 @@ class CTraderSession extends EventEmitter {
                 this.symbolInfoMap.set(symbolId, symbolInfo);
             }
             
-            console.log('[CTraderSession] Using SymbolInfo:', JSON.stringify(symbolInfo, null, 2));
             const divisor = Math.pow(10, symbolInfo.digits);
-            console.log(`[CTraderSession] Divisor: ${divisor} (from digits: ${symbolInfo.digits})`);
             if (isNaN(divisor) || divisor === 0) {
                 throw new Error(`Invalid divisor calculated for symbol ${symbolName}. Digits: ${symbolInfo.digits}`);
             }
@@ -168,7 +164,6 @@ class CTraderSession extends EventEmitter {
             const from = moment.utc().subtract(8, 'days').valueOf();
 
             const dailyBars = await this.getTrendbars(symbolId, 'D1', from, to);
-            console.log('[CTraderSession] RAW BARS:', JSON.stringify(dailyBars, null, 2));
 
             if (!dailyBars || dailyBars.length < 6) {
                  throw new Error(`Not enough historical data. Expected at least 6 daily bars, got ${dailyBars?.length || 0}`);
@@ -176,22 +171,22 @@ class CTraderSession extends EventEmitter {
             
             const todaysBar = dailyBars[dailyBars.length - 1];
             
-            // CORRECTED: Check for existence and then use .toNumber()
-            if (typeof todaysBar?.low?.toNumber !== 'function' || typeof todaysBar?.deltaOpen?.toNumber !== 'function') {
-                throw new Error(`Today's bar has invalid or missing price components. Bar: ${JSON.stringify(todaysBar)}`);
+            if (typeof todaysBar?.low?.toNumber !== 'function' || typeof todaysBar?.deltaOpen?.toNumber !== 'function' || typeof todaysBar?.deltaHigh?.toNumber !== 'function') {
+                throw new Error(`Today's bar has invalid or missing price components.`);
             }
             
             const todaysOpen = (todaysBar.low.toNumber() + todaysBar.deltaOpen.toNumber()) / divisor;
+            const todaysLow = todaysBar.low.toNumber() / divisor;
+            const todaysHigh = (todaysBar.low.toNumber() + todaysBar.deltaHigh.toNumber()) / divisor;
 
             const adrBars = dailyBars.slice(dailyBars.length - 6, dailyBars.length - 1);
             const adrRanges = [];
             
             for (const bar of adrBars) {
-                // CORRECTED: Check for existence and then use .toNumber()
                 if (typeof bar?.low?.toNumber === 'function' && typeof bar?.deltaHigh?.toNumber === 'function') {
                     const low = bar.low.toNumber();
                     const high = low + bar.deltaHigh.toNumber();
-                    adrRanges.push((high / divisor) - (low / divisor));
+                    adrRanges.push((high - low) / divisor);
                 }
             }
 
@@ -204,19 +199,41 @@ class CTraderSession extends EventEmitter {
             const projectedHigh = todaysOpen + (adr / 2);
             const projectedLow = todaysOpen - (adr / 2);
 
+            const toTimestamp = moment.utc().valueOf();
+            const fromTimestamp = moment.utc().subtract(1, 'minute').valueOf();
+
+            const tickResponse = await this.connection.sendCommand('ProtoOAGetTickDataReq', {
+                ctidTraderAccountId: this.ctidTraderAccountId,
+                symbolId,
+                type: 'ASK',
+                fromTimestamp,
+                toTimestamp,
+            });
+            
+            let initialPrice;
+            if (!tickResponse.tickData || tickResponse.tickData.length === 0) {
+                 console.warn(`No recent tick data for ${symbolName}, using today's open as initial price.`);
+                 initialPrice = todaysOpen;
+            } else {
+                 initialPrice = tickResponse.tickData[tickResponse.tickData.length - 1].tick.toNumber() / divisor;
+            }
+
             const dataPackage = {
                 symbol: symbolName,
                 adr,
                 todaysOpen,
+                todaysHigh,
+                todaysLow,
                 projectedHigh,
                 projectedLow,
+                initialPrice: initialPrice,
+                initialMarketProfile: [],
             };
 
-            console.log('[CTraderSession] Successfully created data package:', dataPackage);
             return dataPackage;
 
         } catch (error) {
-            console.error(`[CTraderSession] FAILED to get symbol data package for ${symbolName}:`, error.message);
+            console.error(`[CTraderSession] FAILED to get symbol data package for ${symbolName}:`, error);
             throw error;
         }
     }
