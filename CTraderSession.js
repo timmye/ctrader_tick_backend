@@ -31,16 +31,27 @@ class CTraderSession extends EventEmitter {
 
         this.connection.on('PROTO_OA_SPOT_EVENT', async (event) => {
             const symbolId = Number(event.symbolId);
+            
+            // DEFINITIVE FIX: Get the symbol name from the reliable reverse map.
+            const symbolName = this.reverseSymbolMap.get(symbolId);
+            
+            if (!symbolName) {
+                console.error(`[SYMBOL_TRACE | CTraderSession] Could not resolve symbolId ${symbolId} from reverseSymbolMap. Dropping tick.`);
+                return;
+            }
+            console.log(`[SYMBOL_TRACE | CTraderSession] Resolved symbolId ${symbolId} to symbolName: ${symbolName}`);
+
             const symbolInfo = await this.getFullSymbolInfo(symbolId);
 
             if (symbolInfo && event.bid && event.ask) {
-                const divisor = 100000;
+                const divisor = Math.pow(10, symbolInfo.digits);
                 const tick = {
-                    symbol: symbolInfo.symbolName,
+                    symbol: symbolName,
                     bid: Number(event.bid) / divisor,
                     ask: Number(event.ask) / divisor,
                     timestamp: Date.now(),
                 };
+                console.log(`[SYMBOL_TRACE | CTraderSession] Emitting tick object: ${JSON.stringify(tick)}`);
                 this.emit('tick', tick);
             }
         });
@@ -111,7 +122,7 @@ class CTraderSession extends EventEmitter {
         
         const symbolInfo = await this.getFullSymbolInfo(symbolId);
         const { digits } = symbolInfo;
-        const divisor = 100000;
+        const divisor = Math.pow(10, digits);
 
         const to = moment.utc().valueOf();
         const from = moment.utc().subtract(adrLookbackDays + 5, 'days').valueOf();
@@ -147,7 +158,10 @@ class CTraderSession extends EventEmitter {
 
     async subscribeToTicks(symbolName) {
         const symbolId = this.symbolMap.get(symbolName);
-        if (symbolId) await this.connection.sendCommand('ProtoOASubscribeSpotsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId: [symbolId] });
+        if (symbolId) {
+             console.log(`[SYMBOL_TRACE | CTraderSession] Subscribing to spots for symbolName: ${symbolName} (symbolId: ${symbolId})`);
+            await this.connection.sendCommand('ProtoOASubscribeSpotsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId: [symbolId] });
+        }
     }
     
     async unsubscribeFromTicks(symbolName) {
