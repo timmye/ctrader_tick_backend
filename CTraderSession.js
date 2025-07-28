@@ -9,96 +9,70 @@ class CTraderSession extends EventEmitter {
         super();
         this.connection = null;
         this.heartbeatInterval = null;
-        this.ctidTraderAccountId = parseInt(process.env.CTRADER_ACCOUNT_ID, 10);
+        this.ctidTraderAccountId = Number(process.env.CTRADER_ACCOUNT_ID);
         this.accessToken = process.env.CTRADER_ACCESS_TOKEN;
         this.clientId = process.env.CTRADER_CLIENT_ID;
         this.clientSecret = process.env.CTRADER_CLIENT_SECRET;
         
         this.symbolMap = new Map();
         this.reverseSymbolMap = new Map();
-        this.symbolInfoMap = new Map();
+        this.symbolInfoCache = new Map(); // Cache for full symbol details
     }
 
     async connect() {
         if (this.connection) {
             this.connection.close();
-            this.connection = null;
         }
         
         this.connection = new CTraderConnection({
             host: process.env.HOST,
-            port: parseInt(process.env.PORT, 10),
+            port: Number(process.env.PORT),
         });
 
-        this.connection.on('PROTO_OA_SPOT_EVENT', (event) => {
-            const symbolId = event.symbolId.toNumber();
-            const symbolInfo = this.symbolInfoMap.get(symbolId);
+        this.connection.on('PROTO_OA_SPOT_EVENT', async (event) => {
+            const symbolId = Number(event.symbolId);
+            const symbolInfo = await this.getFullSymbolInfo(symbolId);
 
-            if (symbolInfo && typeof event.bid?.toNumber === 'function' && typeof event.ask?.toNumber === 'function') {
-                const divisor = Math.pow(10, symbolInfo.digits);
+            if (symbolInfo && event.bid && event.ask) {
+                const divisor = 100000;
                 const tick = {
                     symbol: symbolInfo.symbolName,
-                    bid: event.bid.toNumber() / divisor,
-                    ask: event.ask.toNumber() / divisor,
+                    bid: Number(event.bid) / divisor,
+                    ask: Number(event.ask) / divisor,
                     timestamp: Date.now(),
                 };
                 this.emit('tick', tick);
             }
         });
-
-        this.connection.on('close', () => {
-            console.log('CTraderConnection closed.');
-            this.stopHeartbeat();
-            this.emit('disconnected');
-        });
         
-        this.connection.on('error', (err) => {
-            console.error('CTraderConnection error:', err);
-            this.emit('error', err);
-        });
+        this.connection.on('close', () => this.handleDisconnect());
+        this.connection.on('error', (err) => console.error('CTraderConnection error:', err));
 
         try {
             await this.connection.open();
-            await this.connection.sendCommand('ProtoOAApplicationAuthReq', {
-                clientId: this.clientId,
-                clientSecret: this.clientSecret,
-            });
-            await this.connection.sendCommand('ProtoOAAccountAuthReq', {
-                ctidTraderAccountId: this.ctidTraderAccountId,
-                accessToken: this.accessToken,
-            });
-
+            await this.connection.sendCommand('ProtoOAApplicationAuthReq', { clientId: this.clientId, clientSecret: this.clientSecret });
+            await this.connection.sendCommand('ProtoOAAccountAuthReq', { ctidTraderAccountId: this.ctidTraderAccountId, accessToken: this.accessToken });
             await this.loadAllSymbols();
             this.startHeartbeat();
             this.emit('connected', Array.from(this.symbolMap.keys()));
         } catch (error) {
-            console.error('CTraderSession connection/authentication failed:', error);
-            this.emit('error', error);
-            if (this.connection) this.connection.close();
+            this.handleDisconnect(error);
         }
     }
-
-    disconnect() {
+    
+    handleDisconnect(error = null) {
+        if(error) console.error('CTraderSession connection failed:', error);
+        console.log('CTraderConnection closed.');
         this.stopHeartbeat();
-        if (this.connection) {
-            this.connection.close();
-        }
-        this.connection = null;
         this.emit('disconnected');
+        if (this.connection) this.connection.close();
     }
 
     async loadAllSymbols() {
-        const response = await this.connection.sendCommand('ProtoOASymbolsListReq', {
-            ctidTraderAccountId: this.ctidTraderAccountId,
-        });
-
-        this.symbolMap.clear();
-        this.reverseSymbolMap.clear();
-        
+        const response = await this.connection.sendCommand('ProtoOASymbolsListReq', { ctidTraderAccountId: this.ctidTraderAccountId });
         response.symbol.forEach(s => {
-            const symbolIdNum = s.symbolId.toNumber();
-            this.symbolMap.set(s.symbolName, symbolIdNum);
-            this.reverseSymbolMap.set(symbolIdNum, s.symbolName);
+            this.symbolMap.set(s.symbolName, Number(s.symbolId));
+            this.reverseSymbolMap.set(Number(s.symbolId), s.symbolName);
         });
         console.log(`Loaded ${this.symbolMap.size} light symbols.`);
     }
@@ -106,168 +80,79 @@ class CTraderSession extends EventEmitter {
     startHeartbeat() {
         this.stopHeartbeat();
         this.heartbeatInterval = setInterval(() => {
-            try {
-                if (this.connection) {
-                    this.connection.sendCommand('ProtoHeartbeatEvent', {});
-                }
-            } catch (error) {
-                console.error('Failed to send heartbeat:', error);
-            }
+            if (this.connection) this.connection.sendCommand('ProtoHeartbeatEvent', {});
         }, 10000);
     }
 
     stopHeartbeat() {
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-            this.heartbeatInterval = null;
-        }
-    }
-    
-    async getTrendbars(symbolId, period, from, to) {
-        const response = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', {
-            ctidTraderAccountId: this.ctidTraderAccountId,
-            symbolId: symbolId,
-            period: period,
-            fromTimestamp: from,
-            toTimestamp: to,
-        });
-        return response.trendbar;
+        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     }
 
-    async getSymbolDataPackage(symbolName) {
-        try {
-            const symbolId = this.symbolMap.get(symbolName);
-            if (!symbolId) {
-                throw new Error(`Invalid symbol: ${symbolName}`);
-            }
-            
-            let symbolInfo = this.symbolInfoMap.get(symbolId);
-            if (!symbolInfo) {
-                const response = await this.connection.sendCommand('ProtoOASymbolByIdReq', {
-                    ctidTraderAccountId: this.ctidTraderAccountId,
-                    symbolId: [symbolId],
-                });
-
-                if (!response.symbol || response.symbol.length === 0) {
-                    throw new Error(`Failed to fetch full details for symbol ID ${symbolId}`);
-                }
-                symbolInfo = response.symbol[0];
-                this.symbolInfoMap.set(symbolId, symbolInfo);
-            }
-            
-            const divisor = Math.pow(10, symbolInfo.digits);
-            if (isNaN(divisor) || divisor === 0) {
-                throw new Error(`Invalid divisor calculated for symbol ${symbolName}. Digits: ${symbolInfo.digits}`);
-            }
-
-            const to = moment.utc().valueOf();
-            const from = moment.utc().subtract(8, 'days').valueOf();
-
-            const dailyBars = await this.getTrendbars(symbolId, 'D1', from, to);
-
-            if (!dailyBars || dailyBars.length < 6) {
-                 throw new Error(`Not enough historical data. Expected at least 6 daily bars, got ${dailyBars?.length || 0}`);
-            }
-            
-            const todaysBar = dailyBars[dailyBars.length - 1];
-            
-            if (typeof todaysBar?.low?.toNumber !== 'function' || typeof todaysBar?.deltaOpen?.toNumber !== 'function' || typeof todaysBar?.deltaHigh?.toNumber !== 'function') {
-                throw new Error(`Today's bar has invalid or missing price components.`);
-            }
-            
-            const todaysOpen = (todaysBar.low.toNumber() + todaysBar.deltaOpen.toNumber()) / divisor;
-            const todaysLow = todaysBar.low.toNumber() / divisor;
-            const todaysHigh = (todaysBar.low.toNumber() + todaysBar.deltaHigh.toNumber()) / divisor;
-
-            const adrBars = dailyBars.slice(dailyBars.length - 6, dailyBars.length - 1);
-            const adrRanges = [];
-            
-            for (const bar of adrBars) {
-                if (typeof bar?.low?.toNumber === 'function' && typeof bar?.deltaHigh?.toNumber === 'function') {
-                    const low = bar.low.toNumber();
-                    const high = low + bar.deltaHigh.toNumber();
-                    adrRanges.push((high - low) / divisor);
-                }
-            }
-
-            if (adrRanges.length < 5) {
-                throw new Error(`Could not calculate ADR from enough bars. Found ${adrRanges.length} valid bars.`);
-            }
-
-            const adr = adrRanges.reduce((sum, range) => sum + range, 0) / adrRanges.length;
-            
-            const projectedHigh = todaysOpen + (adr / 2);
-            const projectedLow = todaysOpen - (adr / 2);
-
-            const toTimestamp = moment.utc().valueOf();
-            const fromTimestamp = moment.utc().subtract(1, 'minute').valueOf();
-
-            const tickResponse = await this.connection.sendCommand('ProtoOAGetTickDataReq', {
-                ctidTraderAccountId: this.ctidTraderAccountId,
-                symbolId,
-                type: 'ASK',
-                fromTimestamp,
-                toTimestamp,
-            });
-            
-            let initialPrice;
-            if (!tickResponse.tickData || tickResponse.tickData.length === 0) {
-                 console.warn(`No recent tick data for ${symbolName}, using today's open as initial price.`);
-                 initialPrice = todaysOpen;
-            } else {
-                 initialPrice = tickResponse.tickData[tickResponse.tickData.length - 1].tick.toNumber() / divisor;
-            }
-
-            const dataPackage = {
-                symbol: symbolName,
-                adr,
-                todaysOpen,
-                todaysHigh,
-                todaysLow,
-                projectedHigh,
-                projectedLow,
-                initialPrice: initialPrice,
-                initialMarketProfile: [],
-            };
-
-            return dataPackage;
-
-        } catch (error) {
-            console.error(`[CTraderSession] FAILED to get symbol data package for ${symbolName}:`, error);
-            throw error;
+    async getFullSymbolInfo(symbolId) {
+        if (this.symbolInfoCache.has(symbolId)) {
+            return this.symbolInfoCache.get(symbolId);
         }
+        const response = await this.connection.sendCommand('ProtoOASymbolByIdReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId: [symbolId] });
+        if (!response.symbol || response.symbol.length === 0) {
+            throw new Error(`Failed to fetch full details for symbol ID ${symbolId}`);
+        }
+        const fullInfo = response.symbol[0];
+        const processedInfo = {
+            symbolName: fullInfo.symbolName,
+            digits: Number(fullInfo.digits),
+        };
+        this.symbolInfoCache.set(symbolId, processedInfo);
+        return processedInfo;
+    }
+
+    async getSymbolDataPackage(symbolName, adrLookbackDays = 14) {
+        const symbolId = this.symbolMap.get(symbolName);
+        if (!symbolId) throw new Error(`Symbol not found in map: ${symbolName}`);
+        
+        const symbolInfo = await this.getFullSymbolInfo(symbolId);
+        const { digits } = symbolInfo;
+        const divisor = 100000;
+
+        const to = moment.utc().valueOf();
+        const from = moment.utc().subtract(adrLookbackDays + 5, 'days').valueOf();
+        const dailyBarsData = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId, period: 'D1', fromTimestamp: from, toTimestamp: to });
+
+        if (!dailyBarsData.trendbar || dailyBarsData.trendbar.length < 2) throw new Error(`Not enough historical data for ${symbolName}`);
+        
+        const bars = dailyBarsData.trendbar;
+        const todaysBar = bars[bars.length - 1];
+        
+        const todaysOpen = (Number(todaysBar.low) + Number(todaysBar.deltaOpen)) / divisor;
+        const todaysLow = Number(todaysBar.low) / divisor;
+        const todaysHigh = (Number(todaysBar.low) + Number(todaysBar.deltaHigh)) / divisor;
+        const initialPrice = (Number(todaysBar.low) + Number(todaysBar.deltaClose)) / divisor;
+
+        const adrBars = bars.slice(Math.max(0, bars.length - 1 - adrLookbackDays), bars.length - 1);
+        const adrRanges = adrBars.map(bar => Number(bar.deltaHigh) / divisor);
+        const adr = adrRanges.length > 0 ? adrRanges.reduce((sum, range) => sum + range, 0) / adrRanges.length : 0;
+        
+        return {
+            symbol: symbolName,
+            digits,
+            adr,
+            todaysOpen,
+            todaysHigh,
+            todaysLow,
+            projectedHigh: todaysOpen + (adr / 2),
+            projectedLow: todaysOpen - (adr / 2),
+            initialPrice,
+            initialMarketProfile: [],
+        };
     }
 
     async subscribeToTicks(symbolName) {
-        if (!this.connection) throw new Error("Not connected");
-        
         const symbolId = this.symbolMap.get(symbolName);
-        if (!symbolId) {
-            console.warn(`Cannot subscribe, symbol not found: ${symbolName}`);
-            return;
-        }
-
-        await this.connection.sendCommand('ProtoOASubscribeSpotsReq', {
-            ctidTraderAccountId: this.ctidTraderAccountId,
-            symbolId: [symbolId],
-        });
-        console.log(`Successfully subscribed to ticks for ${symbolName}`);
+        if (symbolId) await this.connection.sendCommand('ProtoOASubscribeSpotsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId: [symbolId] });
     }
     
     async unsubscribeFromTicks(symbolName) {
-        if (!this.connection) throw new Error("Not connected");
-
         const symbolId = this.symbolMap.get(symbolName);
-        if (!symbolId) {
-             console.warn(`Cannot unsubscribe, symbol not found: ${symbolName}`);
-            return;
-        }
-
-        await this.connection.sendCommand('ProtoOAUnsubscribeSpotsReq', {
-            ctidTraderAccountId: this.ctidTraderAccountId,
-            symbolId: [symbolId],
-        });
-        console.log(`Sent unsubscribe request for ${symbolName}`);
+        if (symbolId) await this.connection.sendCommand('ProtoOAUnsubscribeSpotsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId: [symbolId] });
     }
 }
 
