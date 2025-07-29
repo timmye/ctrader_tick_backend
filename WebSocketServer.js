@@ -4,8 +4,8 @@ class WebSocketServer {
     constructor(port, cTraderSession) {
         this.wss = new WebSocket.Server({ port });
         this.cTraderSession = cTraderSession;
-        this.clientSubscriptions = new Map(); // Maps WebSocket client to a Set of symbol names
-        this.backendSubscriptions = new Map(); // Maps symbol name to a Set of WebSocket clients
+        this.clientSubscriptions = new Map();
+        this.backendSubscriptions = new Map();
 
         this.currentBackendStatus = 'disconnected';
         this.currentAvailableSymbols = [];
@@ -48,8 +48,7 @@ class WebSocketServer {
     async handleMessage(ws, message) {
         try {
             const data = JSON.parse(message);
-            console.log(`Received message: ${data.type}`);
-             if (data.symbol) {
+            if (data.symbol) {
                 console.log(`[SYMBOL_TRACE | WebSocketServer] Received initial request from client for symbol: ${data.symbol}`);
             }
 
@@ -70,17 +69,16 @@ class WebSocketServer {
     }
 
     async handleSubscribe(ws, symbolName, adrLookbackDays = 14) {
-        console.log(`[SYMBOL_TRACE | WebSocketServer] Processing subscription for symbol: ${symbolName}`);
         if (!symbolName || !this.currentAvailableSymbols.includes(symbolName)) {
             return this.sendToClient(ws, { type: 'error', message: `Invalid symbol: ${symbolName}` });
         }
         try {
-            // Get the data package first. If this fails, we don't subscribe.
             const dataPackage = await this.cTraderSession.getSymbolDataPackage(symbolName, adrLookbackDays);
-             console.log(`[SYMBOL_TRACE | WebSocketServer] Sending data package for ${dataPackage.symbol} to client.`);
+            
+            console.log(`[E2E_TRACE | WebSocketServer] Sending package with ${dataPackage.initialMarketProfile.length} profile entries.`);
+            
             this.sendToClient(ws, { type: 'symbolDataPackage', ...dataPackage });
 
-            // Now, manage the subscriptions as the data is guaranteed to be available.
             const clientSubs = this.clientSubscriptions.get(ws);
             if (clientSubs && !clientSubs.has(symbolName)) {
                 clientSubs.add(symbolName);
@@ -92,7 +90,6 @@ class WebSocketServer {
                 }
 
                 if (symbolSubscribers.size === 0) {
-                    console.log(`First subscriber for ${symbolName}. Subscribing to backend tick stream.`);
                     await this.cTraderSession.subscribeToTicks(symbolName);
                 }
                 symbolSubscribers.add(ws);
@@ -116,7 +113,6 @@ class WebSocketServer {
                 if (symbolSubscribers) {
                     symbolSubscribers.delete(ws);
                     if (symbolSubscribers.size === 0) {
-                        console.log(`Last subscriber for ${symbolName}. Unsubscribing from backend tick stream.`);
                         this.cTraderSession.unsubscribeFromTicks(symbolName);
                         this.backendSubscriptions.delete(symbolName);
                     }
@@ -136,9 +132,6 @@ class WebSocketServer {
     }
     
     broadcastTick(tick) {
-        if (tick && tick.symbol) {
-            console.log(`[SYMBOL_TRACE | WebSocketServer] Broadcasting tick for symbol: ${tick.symbol}`);
-        }
         const symbolSubscribers = this.backendSubscriptions.get(tick.symbol);
         if (symbolSubscribers) {
             const message = JSON.stringify({ type: 'tick', ...tick });
@@ -147,8 +140,6 @@ class WebSocketServer {
                     client.send(message);
                 }
             });
-        } else {
-            console.error(`[WEBSOCKET_SERVER_ERROR] Received tick without a valid symbol subscription:`, tick);
         }
     }
 

@@ -16,7 +16,7 @@ class CTraderSession extends EventEmitter {
         
         this.symbolMap = new Map();
         this.reverseSymbolMap = new Map();
-        this.symbolInfoCache = new Map(); // Cache for full symbol details
+        this.symbolInfoCache = new Map();
     }
 
     async connect() {
@@ -31,15 +31,11 @@ class CTraderSession extends EventEmitter {
 
         this.connection.on('PROTO_OA_SPOT_EVENT', async (event) => {
             const symbolId = Number(event.symbolId);
-            
-            // DEFINITIVE FIX: Get the symbol name from the reliable reverse map.
             const symbolName = this.reverseSymbolMap.get(symbolId);
             
             if (!symbolName) {
-                console.error(`[SYMBOL_TRACE | CTraderSession] Could not resolve symbolId ${symbolId} from reverseSymbolMap. Dropping tick.`);
                 return;
             }
-            console.log(`[SYMBOL_TRACE | CTraderSession] Resolved symbolId ${symbolId} to symbolName: ${symbolName}`);
 
             const symbolInfo = await this.getFullSymbolInfo(symbolId);
 
@@ -51,7 +47,6 @@ class CTraderSession extends EventEmitter {
                     ask: Number(event.ask) / divisor,
                     timestamp: Date.now(),
                 };
-                console.log(`[SYMBOL_TRACE | CTraderSession] Emitting tick object: ${JSON.stringify(tick)}`);
                 this.emit('tick', tick);
             }
         });
@@ -73,7 +68,6 @@ class CTraderSession extends EventEmitter {
     
     handleDisconnect(error = null) {
         if(error) console.error('CTraderSession connection failed:', error);
-        console.log('CTraderConnection closed.');
         this.stopHeartbeat();
         this.emit('disconnected');
         if (this.connection) this.connection.close();
@@ -85,7 +79,6 @@ class CTraderSession extends EventEmitter {
             this.symbolMap.set(s.symbolName, Number(s.symbolId));
             this.reverseSymbolMap.set(Number(s.symbolId), s.symbolName);
         });
-        console.log(`Loaded ${this.symbolMap.size} light symbols.`);
     }
 
     startHeartbeat() {
@@ -125,10 +118,10 @@ class CTraderSession extends EventEmitter {
         const divisor = Math.pow(10, digits);
 
         const to = moment.utc().valueOf();
-        const from = moment.utc().subtract(adrLookbackDays + 5, 'days').valueOf();
-        const dailyBarsData = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId, period: 'D1', fromTimestamp: from, toTimestamp: to });
+        const fromDaily = moment.utc().subtract(adrLookbackDays + 5, 'days').valueOf();
+        const dailyBarsData = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId, period: 'D1', fromTimestamp: fromDaily, toTimestamp: to });
 
-        if (!dailyBarsData.trendbar || dailyBarsData.trendbar.length < 2) throw new Error(`Not enough historical data for ${symbolName}`);
+        if (!dailyBarsData.trendbar || dailyBarsData.trendbar.length < 2) throw new Error(`Not enough daily bars for ${symbolName}`);
         
         const bars = dailyBarsData.trendbar;
         const todaysBar = bars[bars.length - 1];
@@ -142,7 +135,25 @@ class CTraderSession extends EventEmitter {
         const adrRanges = adrBars.map(bar => Number(bar.deltaHigh) / divisor);
         const adr = adrRanges.length > 0 ? adrRanges.reduce((sum, range) => sum + range, 0) / adrRanges.length : 0;
         
-        return {
+        const fromIntraday = moment.utc().startOf('day').valueOf();
+        const intradayBarsData = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId, period: 'M1', fromTimestamp: fromIntraday, toTimestamp: to });
+        
+        if (intradayBarsData.trendbar && intradayBarsData.trendbar.length > 0) {
+            const firstBar = intradayBarsData.trendbar[0];
+            console.log(`[E2E_DEBUG | CTraderSession] First raw bar object:`, firstBar);
+            console.log(`[E2E_DEBUG | CTraderSession] Type of first bar's timestamp property ('utcTimestampInMinutes'): ${typeof firstBar.utcTimestampInMinutes}`);
+        }
+        
+        const initialMarketProfile = intradayBarsData.trendbar
+            .map(bar => ({
+                open: (Number(bar.low) + Number(bar.deltaOpen)) / divisor,
+                high: (Number(bar.low) + Number(bar.deltaHigh)) / divisor,
+                low: Number(bar.low) / divisor,
+                close: (Number(bar.low) + Number(bar.deltaClose)) / divisor,
+                timestamp: Number(bar.utcTimestampInMinutes) * 60 * 1000
+            }));
+        
+        const finalPackage = {
             symbol: symbolName,
             digits,
             adr,
@@ -152,14 +163,15 @@ class CTraderSession extends EventEmitter {
             projectedHigh: todaysOpen + (adr / 2),
             projectedLow: todaysOpen - (adr / 2),
             initialPrice,
-            initialMarketProfile: [],
+            initialMarketProfile,
         };
+        
+        return finalPackage;
     }
 
     async subscribeToTicks(symbolName) {
         const symbolId = this.symbolMap.get(symbolName);
         if (symbolId) {
-             console.log(`[SYMBOL_TRACE | CTraderSession] Subscribing to spots for symbolName: ${symbolName} (symbolId: ${symbolId})`);
             await this.connection.sendCommand('ProtoOASubscribeSpotsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId: [symbolId] });
         }
     }
