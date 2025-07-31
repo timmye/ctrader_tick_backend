@@ -160,8 +160,8 @@ class CTraderSession extends EventEmitter {
             todaysOpen,
             todaysHigh,
             todaysLow,
-            projectedHigh: todaysOpen + (adr / 2),
-            projectedLow: todaysOpen - (adr / 2),
+            projectedAdrHigh: todaysOpen + (adr / 2),
+            projectedAdrLow: todaysOpen - (adr / 2),
             initialPrice,
             initialMarketProfile,
         };
