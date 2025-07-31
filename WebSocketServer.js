@@ -132,6 +132,9 @@ class WebSocketServer {
     }
     
     broadcastTick(tick) {
+        // E2E_DEBUG: Keep for end-to-end diagnosis until production deployment.
+        console.log(`[DEBUG_TRACE | WebSocketServer] Broadcasting tick to subscribers:`, JSON.stringify(tick));
+        
         const symbolSubscribers = this.backendSubscriptions.get(tick.symbol);
         if (symbolSubscribers) {
             const message = JSON.stringify({ type: 'tick', ...tick });

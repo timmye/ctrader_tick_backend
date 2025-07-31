@@ -19,6 +19,18 @@ class CTraderSession extends EventEmitter {
         this.symbolInfoCache = new Map();
     }
 
+    /**
+     * Calculates the actual price from a raw integer value based on cTrader's documentation.
+     * @param {number} rawValue The raw integer price from the API.
+     * @param {number} digits The number of decimal places for the symbol.
+     * @returns {number} The correctly calculated and rounded price.
+     */
+    calculatePrice(rawValue, digits) {
+        if (typeof rawValue !== 'number') return 0;
+        const price = rawValue / 100000.0;
+        return Number(price.toFixed(digits));
+    }
+
     async connect() {
         if (this.connection) {
             this.connection.close();
@@ -30,24 +42,50 @@ class CTraderSession extends EventEmitter {
         });
 
         this.connection.on('PROTO_OA_SPOT_EVENT', async (event) => {
+            // E2E_DEBUG: Keep for end-to-end diagnosis until production deployment.
+            console.log(`[DEBUG_TRACE | CTraderSession] Raw ProtoOASpotEvent received:`, JSON.stringify(event));
+
             const symbolId = Number(event.symbolId);
+            if (!symbolId) return;
+
             const symbolName = this.reverseSymbolMap.get(symbolId);
-            
-            if (!symbolName) {
-                return;
-            }
+            if (!symbolName) return;
 
             const symbolInfo = await this.getFullSymbolInfo(symbolId);
+            if (!symbolInfo) return;
 
-            if (symbolInfo && event.bid && event.ask) {
-                const divisor = Math.pow(10, symbolInfo.digits);
-                const tick = {
+            let tickData = null;
+
+            if (event.trendbar && event.trendbar.length > 0) {
+                const latestBar = event.trendbar[event.trendbar.length - 1];
+                const closePriceRaw = Number(latestBar.low) + Number(latestBar.deltaClose);
+                const price = this.calculatePrice(closePriceRaw, symbolInfo.digits);
+                const timestamp = latestBar.utcTimestampInMinutes ? Number(latestBar.utcTimestampInMinutes) * 60 * 1000 : Date.now();
+
+                tickData = {
                     symbol: symbolName,
-                    bid: Number(event.bid) / divisor,
-                    ask: Number(event.ask) / divisor,
-                    timestamp: Date.now(),
+                    bid: price,
+                    ask: price,
+                    timestamp: timestamp,
                 };
-                this.emit('tick', tick);
+            } 
+            else if (event.bid != null) {
+                const bidRaw = Number(event.bid);
+                const askRaw = (event.ask != null) ? Number(event.ask) : bidRaw;
+                const timestamp = event.timestamp ? Number(event.timestamp) : Date.now();
+
+                tickData = {
+                    symbol: symbolName,
+                    bid: this.calculatePrice(bidRaw, symbolInfo.digits),
+                    ask: this.calculatePrice(askRaw, symbolInfo.digits),
+                    timestamp: timestamp,
+                };
+            }
+
+            if (tickData) {
+                // E2E_DEBUG: Keep for end-to-end diagnosis until production deployment.
+                console.log(`[DEBUG_TRACE | CTraderSession] Emitting processed tick:`, JSON.stringify(tickData));
+                this.emit('tick', tickData);
             }
         });
         
@@ -92,82 +130,89 @@ class CTraderSession extends EventEmitter {
         if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     }
 
-    async getFullSymbolInfo(symbolId) {
-        if (this.symbolInfoCache.has(symbolId)) {
-            return this.symbolInfoCache.get(symbolId);
-        }
-        const response = await this.connection.sendCommand('ProtoOASymbolByIdReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId: [symbolId] });
-        if (!response.symbol || response.symbol.length === 0) {
-            throw new Error(`Failed to fetch full details for symbol ID ${symbolId}`);
-        }
-        const fullInfo = response.symbol[0];
-        const processedInfo = {
-            symbolName: fullInfo.symbolName,
-            digits: Number(fullInfo.digits),
-        };
-        this.symbolInfoCache.set(symbolId, processedInfo);
-        return processedInfo;
+async getFullSymbolInfo(symbolId) {
+    if (this.symbolInfoCache.has(symbolId)) {
+        return this.symbolInfoCache.get(symbolId);
+    }
+    const response = await this.connection.sendCommand('ProtoOASymbolByIdReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId: [symbolId] });
+    if (!response.symbol || response.symbol.length === 0) {
+        throw new Error(`Failed to fetch full details for symbol ID ${symbolId}`);
+    }
+    const fullInfo = response.symbol[0];
+    
+    const processedInfo = {
+        symbolName: fullInfo.symbolName,
+        digits: Number(fullInfo.digits),
+    };
+    this.symbolInfoCache.set(symbolId, processedInfo);
+    return processedInfo;
+}
+
+async getSymbolDataPackage(symbolName, adrLookbackDays = 14) {
+    const symbolId = this.symbolMap.get(symbolName);
+    if (!symbolId) throw new Error(`Symbol not found in map: ${symbolName}`);
+    
+    const symbolInfo = await this.getFullSymbolInfo(symbolId);
+    const { digits } = symbolInfo;
+
+    const to = moment.utc().valueOf();
+    const fromDaily = moment.utc().subtract(adrLookbackDays + 5, 'days').valueOf();
+    const fromIntraday = moment.utc().startOf('day').valueOf();
+
+    const [dailyBarsData, intradayBarsData] = await Promise.all([
+        this.connection.sendCommand('ProtoOAGetTrendbarsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId, period: 'D1', fromTimestamp: fromDaily, toTimestamp: to }),
+        this.connection.sendCommand('ProtoOAGetTrendbarsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId, period: 'M1', fromTimestamp: fromIntraday, toTimestamp: to })
+    ]);
+
+    if (!dailyBarsData.trendbar || dailyBarsData.trendbar.length < 2) throw new Error(`Not enough daily bars for ADR calculation on ${symbolName}`);
+
+    const dailyBars = dailyBarsData.trendbar;
+    const adrBars = dailyBars.slice(Math.max(0, dailyBars.length - 1 - adrLookbackDays), dailyBars.length - 1);
+    const adrRanges = adrBars.map(bar => this.calculatePrice(Number(bar.deltaHigh) || 0, digits));
+    const adr = adrRanges.length > 0 ? adrRanges.reduce((sum, range) => sum + range, 0) / adrRanges.length : 0;
+    
+    let todaysOpen, todaysHigh, todaysLow, initialPrice, initialMarketProfile;
+
+    const m1Bars = intradayBarsData.trendbar;
+
+    if (!m1Bars || m1Bars.length === 0) {
+        const lastDailyBar = dailyBars[dailyBars.length - 1];
+        todaysOpen = this.calculatePrice(Number(lastDailyBar.low) + Number(lastDailyBar.deltaOpen), digits);
+        todaysHigh = this.calculatePrice(Number(lastDailyBar.low) + Number(lastDailyBar.deltaHigh), digits);
+        todaysLow = this.calculatePrice(Number(lastDailyBar.low), digits);
+        initialPrice = this.calculatePrice(Number(lastDailyBar.low) + Number(lastDailyBar.deltaClose), digits);
+        initialMarketProfile = [];
+    } else {
+        const processedM1Bars = m1Bars.map(bar => ({
+            open: this.calculatePrice(Number(bar.low) + Number(bar.deltaOpen), digits),
+            high: this.calculatePrice(Number(bar.low) + Number(bar.deltaHigh), digits),
+            low: this.calculatePrice(Number(bar.low), digits),
+            close: this.calculatePrice(Number(bar.low) + Number(bar.deltaClose), digits),
+            timestamp: Number(bar.utcTimestampInMinutes) * 60 * 1000
+        }));
+
+        todaysOpen = processedM1Bars[0].open;
+        todaysHigh = Math.max(...processedM1Bars.map(b => b.high));
+        todaysLow = Math.min(...processedM1Bars.map(b => b.low));
+        initialPrice = processedM1Bars[processedM1Bars.length - 1].close;
+        initialMarketProfile = processedM1Bars;
     }
 
-    async getSymbolDataPackage(symbolName, adrLookbackDays = 14) {
-        const symbolId = this.symbolMap.get(symbolName);
-        if (!symbolId) throw new Error(`Symbol not found in map: ${symbolName}`);
-        
-        const symbolInfo = await this.getFullSymbolInfo(symbolId);
-        const { digits } = symbolInfo;
-        const divisor = Math.pow(10, digits);
-
-        const to = moment.utc().valueOf();
-        const fromDaily = moment.utc().subtract(adrLookbackDays + 5, 'days').valueOf();
-        const dailyBarsData = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId, period: 'D1', fromTimestamp: fromDaily, toTimestamp: to });
-
-        if (!dailyBarsData.trendbar || dailyBarsData.trendbar.length < 2) throw new Error(`Not enough daily bars for ${symbolName}`);
-        
-        const bars = dailyBarsData.trendbar;
-        const todaysBar = bars[bars.length - 1];
-        
-        const todaysOpen = (Number(todaysBar.low) + Number(todaysBar.deltaOpen)) / divisor;
-        const todaysLow = Number(todaysBar.low) / divisor;
-        const todaysHigh = (Number(todaysBar.low) + Number(todaysBar.deltaHigh)) / divisor;
-        const initialPrice = (Number(todaysBar.low) + Number(todaysBar.deltaClose)) / divisor;
-
-        const adrBars = bars.slice(Math.max(0, bars.length - 1 - adrLookbackDays), bars.length - 1);
-        const adrRanges = adrBars.map(bar => Number(bar.deltaHigh) / divisor);
-        const adr = adrRanges.length > 0 ? adrRanges.reduce((sum, range) => sum + range, 0) / adrRanges.length : 0;
-        
-        const fromIntraday = moment.utc().startOf('day').valueOf();
-        const intradayBarsData = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', { ctidTraderAccountId: this.ctidTraderAccountId, symbolId, period: 'M1', fromTimestamp: fromIntraday, toTimestamp: to });
-        
-        if (intradayBarsData.trendbar && intradayBarsData.trendbar.length > 0) {
-            const firstBar = intradayBarsData.trendbar[0];
-            console.log(`[E2E_DEBUG | CTraderSession] First raw bar object:`, firstBar);
-            console.log(`[E2E_DEBUG | CTraderSession] Type of first bar's timestamp property ('utcTimestampInMinutes'): ${typeof firstBar.utcTimestampInMinutes}`);
-        }
-        
-        const initialMarketProfile = intradayBarsData.trendbar
-            .map(bar => ({
-                open: (Number(bar.low) + Number(bar.deltaOpen)) / divisor,
-                high: (Number(bar.low) + Number(bar.deltaHigh)) / divisor,
-                low: Number(bar.low) / divisor,
-                close: (Number(bar.low) + Number(bar.deltaClose)) / divisor,
-                timestamp: Number(bar.utcTimestampInMinutes) * 60 * 1000
-            }));
-        
-        const finalPackage = {
-            symbol: symbolName,
-            digits,
-            adr,
-            todaysOpen,
-            todaysHigh,
-            todaysLow,
-            projectedAdrHigh: todaysOpen + (adr / 2),
-            projectedAdrLow: todaysOpen - (adr / 2),
-            initialPrice,
-            initialMarketProfile,
-        };
-        
-        return finalPackage;
-    }
+    const finalPackage = {
+        symbol: symbolName,
+        digits,
+        adr,
+        todaysOpen,
+        todaysHigh,
+        todaysLow,
+        projectedAdrHigh: todaysOpen + (adr / 2),
+        projectedAdrLow: todaysOpen - (adr / 2),
+        initialPrice,
+        initialMarketProfile,
+    };
+    
+    return finalPackage;
+}
 
     async subscribeToTicks(symbolName) {
         const symbolId = this.symbolMap.get(symbolName);
